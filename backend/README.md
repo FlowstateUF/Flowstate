@@ -5,6 +5,7 @@ This is the backend code for Flowstate, utilizing Flask.
 ## Requirements
  - the first time you are running the backend, cd into the backend directory and run the command 'python -m pip install -r requirements.txt' in your terminal
  - this installs all dependencies specified there
+ - add secrets to .env
 
 ## Guide
 - run run.py
@@ -29,9 +30,10 @@ This is the backend code for Flowstate, utilizing Flask.
 - services/init.py: this allows for services to be seen as a package
     - imports service functions for easy external imports
 
-- services/db_service.py: this is where all database-related operations are written
+- services/document_service.py: this is where all document-related operations are written
 
 - services/parsing_service.py: this is where all document parsing operations are written
+    - might merge this with document_service.py
 
 - services/storage_service.py: this is where all supabase storage operations are written
 

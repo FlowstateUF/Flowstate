@@ -1,6 +1,7 @@
 from flask import Flask
 from flask_cors import CORS
 from app.db import init_db
+from app import models
 
 # Initalize Flask app, database, and CORS settings
 
