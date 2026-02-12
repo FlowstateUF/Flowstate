@@ -3,3 +3,4 @@ Flask-CORS==6.0.0
 Flask-SQLAlchemy>=3.0,<4.0
 supabase
 python-dotenv
+openai

@@ -1,5 +1,7 @@
 from flask import request, jsonify
 from services import upload_doc_to_supabase, create_document_record
+from openai import OpenAI
+from app.config import settings
 
 # ** Where HTTP routes are written **
 
@@ -44,4 +46,21 @@ def register_routes(app):
             "storage_path": storage_path
         }), 200
 
+    @app.route("/api/generate", methods=["GET", "POST"])
+    def generate():
 
+        client = OpenAI(
+            api_key=settings.NAVIGATOR_API_KEY,
+            base_url="https://api.ai.it.ufl.edu/v1/",
+        )
+
+        PROMPT = "Say hello and tell me the definition of a square."
+
+        response = client.responses.create(
+            model="gpt-oss-20b",
+            input=PROMPT,
+        )
+
+        return jsonify({
+            "text": response.output_text
+        })

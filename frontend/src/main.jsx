@@ -6,6 +6,7 @@ import App from './App.jsx'
 import Home from './pages/Home/Home.jsx'
 import Login from './pages/Login/Login.jsx'
 import Register from './pages/Register/Register.jsx'
+import Test from './pages/Test.jsx'
 
 /*
  * Each webpage route is defined here: examples below
@@ -25,6 +26,7 @@ createRoot(document.getElementById('root')).render(
           <Route index element={<Home />} />
           <Route path="login" element={<Login />} />
           <Route path="register" element={<Register />} />
+          <Route path="test" element={<Test />} />
         </Route>
       </Routes>
     </BrowserRouter>

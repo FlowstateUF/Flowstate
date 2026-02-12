@@ -2,6 +2,7 @@ from flask import Flask
 from flask_cors import CORS
 from app.db import init_db
 from app import models
+from app.config import settings
 
 # Initalize Flask app, database, and CORS settings
 
@@ -11,8 +12,9 @@ def create_app():
     # Configuration
     app.config['SQLALCHEMY_DATABASE_URI'] = 'sqlite:///flowstate.db'
     app.config['SQLALCHEMY_TRACK_MODIFICATIONS'] = False
-    
-    CORS(app, resources={r"/*": {"origins": "http://localhost:5173"}})
+    app.config["SECRET_KEY"] = settings.SECRET_KEY
+
+    CORS(app, resources={r"/*": {"origins": ["http://localhost:5173","http://localhost:3000"]}})
     init_db(app)
     
     # Register routes
