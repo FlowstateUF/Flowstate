@@ -19,6 +19,7 @@ function App() {
           </div>
 
           <nav className="topbar-nav">
+            <button type="button" className="nav-pill" onClick={() => navigate('/test')}>Test</button>
             <button type="button" className="nav-pill">Solutions</button>
             <button type="button" className="nav-pill">Our Mission</button>
           </nav>
