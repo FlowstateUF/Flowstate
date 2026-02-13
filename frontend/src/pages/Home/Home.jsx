@@ -8,6 +8,7 @@ function Home() {
   const fileInputRef = useRef(null)
   const [selectedFile, setSelectedFile] = useState(null)
   const [error, setError] = useState('')
+  const [uploading, setUploading] = useState(false)
 
   const handleButtonClick = () => {
     setError('')
@@ -30,6 +31,38 @@ function Home() {
 
     setSelectedFile(file)
     setError('')
+    uploadFile(file)
+  }
+
+  const uploadFile = async (file) => {
+    const formData = new FormData()
+    formData.append('file', file)
+
+    try {
+      setUploading(true)
+      const response = await fetch('http://localhost:5001/api/upload', {
+        method: 'POST',
+        body: formData,
+      })
+
+      if (response.ok) {
+        const data = await response.json()
+        setError('')
+        setSelectedFile(null)
+        if (fileInputRef.current) fileInputRef.current.value = ''
+        // Show file?
+        console.log('Upload successful:', data)
+      } else {
+        const data = await response.json()
+        setError('Upload failed. Please try again.')
+        console.error('Upload failed:', data)
+      }
+    } catch (err) {
+      setError('Upload error')
+      console.error('Upload error:', err)
+    } finally {
+      setUploading(false)
+    }
   }
 
   return (

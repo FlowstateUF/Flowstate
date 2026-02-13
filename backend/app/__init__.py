@@ -1,7 +1,10 @@
 from flask import Flask
 from flask_cors import CORS
 from app.db import init_db
+from app import models
 from app.config import settings
+
+# Initalize Flask app, database, and CORS settings
 
 def create_app():
     app = Flask(__name__)
