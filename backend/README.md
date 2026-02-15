@@ -6,6 +6,10 @@ This is the backend code for Flowstate, utilizing Flask.
  - the first time you are running the backend, cd into the backend directory and run the command 'python -m pip install -r requirements.txt' in your terminal
  - this installs all dependencies specified there
  - add secrets to .env
+    - create a file called '.env' in the backend folder
+    - generate a personal Navigator API key (Navigator Toolkit online)
+    - Get the Supabase keys Aaron emailed
+    - Define the keys in the .env folder
 
 ## Guide
 - run run.py

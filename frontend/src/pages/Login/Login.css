@@ -1,0 +1,89 @@
+/* Centers the login card on screen */
+.login-page {
+    display: flex;
+    justify-content: center;
+    align-items: center;
+    height: 85vh;
+  }
+  
+  /* Card container */
+  .login-box {
+    width: 360px;
+    padding: 30px;
+    background: white;
+    border-radius: 12px;
+    box-shadow: 0 10px 28px rgba(0, 0, 0, 0.12);
+    text-align: center;
+  }
+  
+  /* Title */
+  .login-box h1 {
+    margin-bottom: 20px;
+  }
+  
+  /* Form layout */
+  .login-box form {
+    display: flex;
+    flex-direction: column;
+    gap: 12px;
+  }
+  
+  /* Inputs */
+  .login-box input {
+    padding: 11px;
+    border-radius: 6px;
+    border: 1px solid #ccc;
+    font-size: 14px;
+    transition: border 0.2s;
+  }
+  
+  .login-box input:focus {
+    outline: none;
+    border-color: #4a7cff;
+  }
+  
+  /* Button */
+  .login-box button {
+    margin-top: 10px;
+    padding: 12px;
+    background: #4a7cff;
+    color: white;
+    border: none;
+    border-radius: 6px;
+    cursor: pointer;
+    font-weight: 600;
+    transition: background 0.2s;
+  }
+  
+  .login-box button:hover {
+    background: #355fe6;
+  }
+  
+  .login-box button:disabled {
+    background: #9fb4ff;
+    cursor: not-allowed;
+  }
+  
+  /* Error message */
+  .error {
+    color: #d93025;
+    font-size: 14px;
+    margin-top: 4px;
+  }
+  
+  /* Signup text under form */
+  .switch-text {
+    margin-top: 16px;
+    font-size: 14px;
+    color: #555;
+  }
+  
+  .switch-text span {
+    color: #4a7cff;
+    font-weight: 600;
+    cursor: pointer;
+  }
+  
+  .switch-text span:hover {
+    text-decoration: underline;
+  }
