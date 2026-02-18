@@ -5,7 +5,11 @@ This is the React frontend for Flowstate, built with Vite.
 ## Requirements
 - Node.js 22 LTS (or 18/20 LTS also acceptable)
 - npm (comes with Node)
-- react-router-dom (run 'npm install react-router-dom' in the frontend terminal)
+
+*** Simply run 'npm install' and it will install the dependencies below
+    - react-router-dom (run 'npm install react-router-dom' in the frontend terminal)
+    - install mantine using 'npm install @mantine/core @mantine/hooks @mantine/form @mantine/notifications' in the frontend folder
+    - npm install @tabler/icons-react
 
 ## Guide
 - On first ever use (after cloning the repo), run 'npm install' in the terminal within the frontend folder

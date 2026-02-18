@@ -2,9 +2,10 @@ import { useRef, useState } from 'react'
 import notesImg from '../../assets/notes_.jpg'
 import scantronImg from '../../assets/scantron.png'
 import reportCardImg from '../../assets/reportcard.png'
-import './Home.css'
+import Navbar from "../../components/NavBar.jsx";
+import './Courses.css'
 
-function Home() {
+function Courses() {
   const fileInputRef = useRef(null)
   const [selectedFile, setSelectedFile] = useState(null)
   const [error, setError] = useState('')
@@ -66,46 +67,52 @@ function Home() {
   }
 
   return (
-    <main className="content">
-      <div className="center-stack">
-        <div className="pill pill--welcome pill--cta">Welcome to Flowstate!</div>
-
-        <button
-          type="button"
-          className="pill pill--upload pill--cta"
-          onClick={handleButtonClick}
-        >
-          upload notes / textbook
-        </button>
-
-        <input
-          ref={fileInputRef}
-          type="file"
-          accept="application/pdf,.pdf"
-          onChange={handleFileChange}
-          style={{ display: 'none' }}
-        />
-
-        {selectedFile && (
-          <p className="status-text">
-            Selected: <strong>{selectedFile.name}</strong>
-          </p>
-        )}
-
-        {error && (
-          <p className="status-text error-text">
-            <strong>{error}</strong>
-          </p>
-        )}
-
-        <div className="image-row">
-          <img className="hover-card" src={notesImg} alt="Notes" />
-          <img className="hover-card" src={scantronImg} alt="Scantron" />
-          <img className="hover-card" src={reportCardImg} alt="Report card" />
+    <>
+      <Navbar />
+  
+      <main className="content">
+        <div className="center-stack">
+          <div className="pill pill--welcome pill--cta">
+            Welcome to Flowstate!
+          </div>
+  
+          <button
+            type="button"
+            className="pill pill--upload pill--cta"
+            onClick={handleButtonClick}
+          >
+            upload notes / textbook
+          </button>
+  
+          <input
+            ref={fileInputRef}
+            type="file"
+            accept="application/pdf,.pdf"
+            onChange={handleFileChange}
+            style={{ display: 'none' }}
+          />
+  
+          {selectedFile && (
+            <p className="status-text">
+              Selected: <strong>{selectedFile.name}</strong>
+            </p>
+          )}
+  
+          {error && (
+            <p className="status-text error-text">
+              <strong>{error}</strong>
+            </p>
+          )}
+  
+          <div className="image-row">
+            <img className="hover-card" src={notesImg} alt="Notes" />
+            <img className="hover-card" src={scantronImg} alt="Scantron" />
+            <img className="hover-card" src={reportCardImg} alt="Report card" />
+          </div>
         </div>
-      </div>
-    </main>
-  )
+      </main>
+    </>
+  );
 }
 
-export default Home
+export default Courses

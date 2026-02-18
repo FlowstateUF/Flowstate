@@ -26,7 +26,7 @@ export default function Test() {
   };
 
   return (
-    <div style={{color: "white", padding: 32 }}>
+    <div style={{color: "black", padding: 32 }}>
       <h2>Test</h2>
 
         <button
