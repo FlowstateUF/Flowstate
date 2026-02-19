@@ -27,13 +27,13 @@
   }
   
   .pill--welcome {
-    background: #355E3B;
+    background: #3186d6;
     color: #fff;
   }
   
   .pill--upload {
-    background: #ffd54a;
-    color: #000;
+    background: #3186d6;
+    color: #ffffff;
     border: none;
     cursor: pointer;
     transition: transform 120ms ease, filter 120ms ease;
