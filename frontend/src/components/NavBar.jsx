@@ -17,7 +17,8 @@ export default function NavBar({ isAuthed = true }) {
   const navigate = useNavigate();
 
   const handleLogout = () => {
-    // Later: clear auth token
+    localStorage.removeItem("access_token");
+    localStorage.removeItem("user");
     navigate("/login");
   };
 

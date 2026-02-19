@@ -5,6 +5,7 @@ from app.config import settings
 from app.db import db
 from app.models import User
 import re
+from flask_jwt_extended import create_access_token, jwt_required, get_jwt_identity
 
 # ** Where HTTP routes are written **
 # register_routes is called in init.py, giving it access to all the routes below 
@@ -85,19 +86,31 @@ def register_routes(app):
         if not user or not user.check_password(password):
             return jsonify({"error": "Invalid email or password"}), 401
 
+        token = create_access_token(identity=str(user.id))
+
         return jsonify({
             "message": "Login successful",
+            "access_token": token,
             "user": {"id": user.id, "username": user.username}
         }), 200
+
+    @app.get("/api/me")
+    @jwt_required()
+    def me():
+        user_id = get_jwt_identity()
+        user = User.query.get(user_id)
+        if not user:
+            return jsonify({"error": "User not found"}), 404
+        return jsonify({"id": user.id, "username": user.username, "email": user.email}), 200
 
 
     # ** Textbook Behavior Routers **
     
     @app.post("/api/upload")
+    @jwt_required()
     def upload_document():
+        user_id = get_jwt_identity()
         file = request.files.get("file")
-        # user_id = request.form.get("user_id")
-        user_id = 1 # Placeholder
 
         if not file:
             return jsonify({"error": "No file uploaded."}), 400
@@ -126,13 +139,15 @@ def register_routes(app):
             "filename": doc.filename,
             "storage_path": storage_path
         }), 200
-    
 
     # ** NaviGator Routes **
 
-    @app.route("/api/generate", methods=["GET", "POST"])
+    @app.route("/api/generate", methods=["POST"])
+    @jwt_required()
     def generate():
+        user_id = get_jwt_identity()
 
+        data = request.get_json(silent=True) or {}
         client = OpenAI(
             api_key=settings.NAVIGATOR_API_KEY,
             base_url="https://api.ai.it.ufl.edu/v1/",
@@ -147,4 +162,5 @@ def register_routes(app):
 
         return jsonify({
             "text": response.output_text
-        })
+        }), 200
+

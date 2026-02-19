@@ -3,6 +3,8 @@ from flask_cors import CORS
 from app.db import init_db
 from app import models
 from app.config import settings
+from flask_jwt_extended import JWTManager
+import os
 
 # Initalize Flask app, database, and CORS settings
 
@@ -13,6 +15,8 @@ def create_app():
     app.config['SQLALCHEMY_DATABASE_URI'] = 'sqlite:///flowstate.db'
     app.config['SQLALCHEMY_TRACK_MODIFICATIONS'] = False
     app.config["SECRET_KEY"] = settings.SECRET_KEY
+    app.config["JWT_SECRET_KEY"] = os.environ.get("JWT_SECRET_KEY")
+    jwt = JWTManager(app)
 
     CORS(app, resources={r"/*": {"origins": ["http://localhost:5173","http://localhost:3000"]}})
     init_db(app)
