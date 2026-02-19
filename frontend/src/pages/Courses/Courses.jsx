@@ -1,15 +1,40 @@
-import { useRef, useState } from 'react'
+import { useRef, useState,useEffect } from 'react'
 import notesImg from '../../assets/notes_.jpg'
 import scantronImg from '../../assets/scantron.png'
 import reportCardImg from '../../assets/reportcard.png'
 import Navbar from "../../components/NavBar.jsx";
 import './Courses.css'
+import { authFetch } from "../../utils/authFetch";
+import { useNavigate } from 'react-router-dom';
 
 function Courses() {
+  const navigate = useNavigate();
   const fileInputRef = useRef(null)
   const [selectedFile, setSelectedFile] = useState(null)
   const [error, setError] = useState('')
   const [uploading, setUploading] = useState(false)
+
+  useEffect(() => {
+    async function loadMe() {
+      const res = await authFetch("http://localhost:5001/api/me");
+
+      if (!res.ok) {
+        navigate("/login");
+        return;
+      }
+
+      const me = await res.json().catch(() => null);
+      console.log("Logged in as:", me);
+    }
+
+    loadMe();
+  }, [navigate]);
+
+  const logout = () => {
+    localStorage.removeItem("access_token");
+    localStorage.removeItem("user");
+    navigate("/login");
+  };
 
   const handleButtonClick = () => {
     setError('')
@@ -41,20 +66,20 @@ function Courses() {
 
     try {
       setUploading(true)
-      const response = await fetch('http://localhost:5001/api/upload', {
+      const response = await authFetch('http://localhost:5001/api/upload', {
         method: 'POST',
         body: formData,
       })
 
+      const data = await response.json().catch(() => ({}));
+
       if (response.ok) {
-        const data = await response.json()
         setError('')
         setSelectedFile(null)
         if (fileInputRef.current) fileInputRef.current.value = ''
         // Show file?
         console.log('Upload successful:', data)
       } else {
-        const data = await response.json()
         setError('Upload failed. Please try again.')
         console.error('Upload failed:', data)
       }
@@ -83,7 +108,11 @@ function Courses() {
           >
             upload notes / textbook
           </button>
-  
+
+          <button type="button" className="pill pill--cta" onClick={logout}>
+            logout
+          </button>
+
           <input
             ref={fileInputRef}
             type="file"

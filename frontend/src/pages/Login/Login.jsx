@@ -45,6 +45,9 @@ export default function Login() {
       if (!res.ok) {
         throw new Error(data.error || "Invalid email or password");
       }
+      
+      localStorage.setItem("access_token", data.access_token);
+      localStorage.setItem("user", JSON.stringify(data.user));
 
       navigate("/courses");
     } catch (err) {

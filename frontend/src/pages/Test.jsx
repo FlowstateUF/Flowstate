@@ -1,4 +1,5 @@
 import { useState } from "react";
+import { authFetch } from "../utils/authFetch";
 
 export default function Test() {
   const [text, setText] = useState("");
@@ -9,7 +10,7 @@ export default function Test() {
     setText("");
 
     try {
-      const res = await fetch("http://localhost:5001/api/generate", {
+      const res = await authFetch("http://localhost:5001/api/generate", {
         method: "POST",
       });
 
