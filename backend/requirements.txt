@@ -1,7 +1,7 @@
 Flask==3.0.2
 Flask-CORS==6.0.0
-Flask-SQLAlchemy>=3.0,<4.0
 flask-jwt-extended
-supabase
-python-dotenv
 openai
+python-dotenv
+qdrant-client
+supabase
