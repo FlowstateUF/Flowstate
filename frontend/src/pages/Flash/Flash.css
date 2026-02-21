@@ -1,0 +1,112 @@
+.flashpage {
+  padding: 36px 40px;
+}
+
+/* Header */
+.flashpage-header {
+  margin-bottom: 18px;
+}
+
+.flashpage-title {
+  font-size: 42px;
+  font-weight: 900;
+  letter-spacing: -0.5px;
+}
+
+/* Outer card container matches the mock proportions */
+.flipcard-outer {
+  border-radius: 18px;
+  padding: 0;
+  overflow: hidden;
+}
+
+/* Flip container */
+.flipcard {
+  position: relative;
+  width: 100%;
+  height: 360px;
+  transform-style: preserve-3d;
+  transition: transform 520ms ease;
+  background: white;
+}
+
+/* When flipped */
+.flipcard.is-flipped {
+  transform: rotateY(180deg);
+}
+
+/* Front/back faces */
+.flipcard-face {
+  position: absolute;
+  inset: 0;
+  backface-visibility: hidden;
+  padding: 44px 48px;
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+}
+
+/* Front has placeholder bars */
+.flipcard-front {
+  gap: 34px;
+}
+
+.line {
+  height: 54px;
+  border-radius: 10px;
+  background: #9aa3ad;
+  opacity: 0.95;
+}
+
+.line-1 {
+  width: 92%;
+}
+.line-2 {
+  width: 72%;
+}
+
+/* Back side */
+.flipcard-back {
+  transform: rotateY(180deg);
+  gap: 10px;
+}
+
+.back-title {
+  font-size: 18px;
+}
+
+.back-text {
+  font-size: 20px;
+  font-weight: 700;
+  line-height: 1.25;
+}
+
+/* Hint text */
+.flip-hint {
+  font-size: 14px;
+  font-weight: 600;
+  letter-spacing: 0.2px;
+}
+
+/* Responsive */
+@media (max-width: 900px) {
+  .flashpage {
+    padding: 20px;
+  }
+
+  .flashpage-title {
+    font-size: 32px;
+  }
+
+  .flipcard {
+    height: 300px;
+  }
+
+  .flipcard-face {
+    padding: 26px 22px;
+  }
+
+  .back-text {
+    font-size: 18px;
+  }
+}

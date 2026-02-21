@@ -1,0 +1,151 @@
+.dashboard-page {
+  padding: 40px;
+}
+
+/* shared card look */
+.dashboard-card {
+  border-radius: 14px;
+}
+
+/* Top section layout */
+.dashboard-top-row {
+  align-items: flex-start;
+}
+
+.dashboard-cover {
+  width: 180px;
+  height: 180px;
+  border-radius: 12px;
+  overflow: hidden;
+  background: var(--mantine-color-gray-2);
+  flex: 0 0 auto;
+}
+
+.dashboard-middle {
+  flex: 1;
+}
+
+.dashboard-text-lines {
+  margin-top: 12px;
+}
+
+.dashboard-line {
+  height: 10px;
+  border-radius: 999px;
+  background: var(--mantine-color-gray-3);
+}
+
+/* Textbook dropdown styled like a title */
+.dashboard-title-block {
+  max-width: 520px;
+}
+
+.dashboard-textbook-select label {
+  font-weight: 600;
+}
+
+/* Make the selected value feel “title-like” */
+.dashboard-textbook-select input {
+  font-size: 28px;
+  font-weight: 800;
+  height: 52px;
+  padding-top: 10px;
+  padding-bottom: 10px;
+}
+
+.dashboard-controls {
+  width: 280px;
+  flex: 0 0 auto;
+}
+
+/* Buttons row (font fits inside) */
+.dashboard-actions {
+  width: 100%;
+  display: flex;
+  gap: 12px;
+}
+
+.dashboard-actions > * {
+  flex: 1;
+}
+
+.dashboard-actions button {
+  font-size: 14px;
+  padding: 10px 14px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  min-width: 120px;
+}
+
+/* Bottom section layout */
+.dashboard-bottom-left {
+  flex: 1;
+}
+
+.dashboard-chart {
+  width: 420px;
+  border-radius: 12px;
+  border: 1px solid var(--mantine-color-gray-4);
+  background: var(--mantine-color-gray-9);
+  position: relative;
+  overflow: hidden;
+}
+
+.dashboard-chart-inner {
+  position: absolute;
+  inset: 0;
+  display: grid;
+  place-items: center;
+}
+
+/* CLICKABLE hover → blue border */
+.dashboard-clickable {
+  cursor: pointer;
+  transition: border-color 150ms ease, box-shadow 150ms ease, transform 150ms ease;
+}
+
+.dashboard-clickable:hover {
+  border-color: var(--mantine-color-blue-6) !important;
+  box-shadow: 0 6px 18px rgba(0, 0, 0, 0.08);
+}
+
+.dashboard-clickable:active {
+  transform: translateY(1px);
+}
+
+.dashboard-clickable:focus-visible {
+  outline: 2px solid var(--mantine-color-blue-6);
+  outline-offset: 2px;
+}
+
+/* Responsive: stack nicely on smaller screens */
+@media (max-width: 900px) {
+  .dashboard-page {
+    padding: 20px;
+  }
+
+  .dashboard-top-row,
+  .dashboard-bottom-row {
+    flex-wrap: wrap;
+  }
+
+  .dashboard-controls,
+  .dashboard-chart {
+    width: 100%;
+  }
+
+  .dashboard-chart {
+    height: 260px;
+  }
+
+  .dashboard-actions button {
+    min-width: 0;
+    font-size: 13px;
+  }
+
+  .dashboard-textbook-select input {
+    font-size: 22px;
+    height: 48px;
+  }
+}
