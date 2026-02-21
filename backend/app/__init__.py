@@ -1,7 +1,5 @@
 from flask import Flask
 from flask_cors import CORS
-from app.db import init_db
-from app import models
 from app.config import settings
 from flask_jwt_extended import JWTManager
 import os
@@ -19,7 +17,6 @@ def create_app():
     jwt = JWTManager(app)
 
     CORS(app, resources={r"/*": {"origins": ["http://localhost:5173","http://localhost:3000"]}})
-    init_db(app)
     
     # Register routes
     from app import routes

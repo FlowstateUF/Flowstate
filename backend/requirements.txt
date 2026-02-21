@@ -1,7 +1,12 @@
+docling
+docling-core[chunking-openai]
 Flask==3.0.2
 Flask-CORS==6.0.0
-flask-jwt-extended
-openai
-python-dotenv
-qdrant-client
-supabase
+flask-jwt-extended==4.7.1
+openai===2.20.0
+pymupdf==1.27.1
+python-dotenv==1.2.1
+qdrant-client==1.17.0
+supabase==2.28.0
+sentence-transformers==5.2.3
+tiktoken

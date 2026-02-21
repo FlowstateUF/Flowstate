@@ -18,9 +18,16 @@ class Settings:
 
 settings = Settings()
 
+
+if not settings.JWT_SECRET_KEY:
+    raise RuntimeError("missing JWT_SECRET_KEY. create a backend/.env and set it.")
 if not settings.NAVIGATOR_API_KEY:
     raise RuntimeError("missing NAVIGATOR_API_KEY. create a backend/.env and set it.")
 if not settings.SUPABASE_URL:
     raise RuntimeError("missing SUPABASE_URL. create a backend/.env and set it.")
 if not settings.SUPABASE_SERVICE_KEY:
     raise RuntimeError("missing SUPABASE_SERVICE_KEY. create a backend/.env and set it.")
+if not settings.QDRANT_URL:
+    raise RuntimeError("missing QDRANT_URL. create a backend/.env and set it.")
+if not settings.QDRANT_API_KEY:
+    raise RuntimeError("missing QDRANT_API_KEY. create a backend/.env and set it.")

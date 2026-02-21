@@ -7,9 +7,7 @@ supabase: Client = create_client(
     settings.SUPABASE_SERVICE_KEY
 )
 
-qdrant_client = QdrantClient(
+qdrant = QdrantClient(
     url=settings.QDRANT_URL,
     api_key=settings.QDRANT_API_KEY
 )
-
-
