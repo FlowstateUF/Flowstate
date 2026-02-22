@@ -1,0 +1,77 @@
+.stats-page {
+  padding: 36px 40px;
+}
+
+/* KPI Cards */
+.stats-kpi {
+  min-height: 92px;
+}
+
+.stats-kpi-dark {
+  background: #3c3c3c;
+  border-color: #3c3c3c;
+}
+
+.stats-text-light {
+  color: white;
+}
+
+.stats-icon-dark {
+  background: rgba(255, 255, 255, 0.12);
+  color: white;
+}
+
+/* Chart/table cards */
+.stats-card {
+  border-radius: 14px;
+}
+
+/* Make the left chart span 2 columns on large screens */
+@media (min-width: 1200px) {
+  .lg-span-2 {
+    grid-column: span 2;
+  }
+}
+
+/* Legend dots & series styling */
+.stats-dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  display: inline-block;
+}
+
+/* Use neutral grayscale like mock */
+.stats-dot-0 { background: #e03131; } /* red */
+.stats-dot-1 { background: #f59f00; } /* orange */
+.stats-dot-2 { background: #fab005; } /* yellow */
+.stats-dot-3 { background: #2f9e44; } /* green */
+
+.stats-bar { shape-rendering: geometricPrecision; }
+.stats-bar-0 { fill: #e03131; } /* red */
+.stats-bar-1 { fill: #f59f00; } /* orange */
+.stats-bar-2 { fill: #fab005; } /* yellow */
+.stats-bar-3 { fill: #2f9e44; } /* green */
+
+.stats-svg-scroll {
+  width: 100%;
+  overflow-x: auto;
+}
+
+/* Donut segments */
+.stats-donut-0 { stroke: #e03131; } /* red */
+.stats-donut-1 { stroke: #f59f00; } /* orange */
+.stats-donut-2 { stroke: #fab005; } /* yellow */
+.stats-donut-3 { stroke: #2f9e44; } /* green */
+
+/* Table link look */
+.stats-link {
+  color: var(--mantine-color-blue-6);
+  font-weight: 600;
+  cursor: pointer;
+  white-space: nowrap;
+}
+
+.stats-link:hover {
+  text-decoration: underline;
+}

@@ -11,7 +11,16 @@ import Register from './pages/Register/Register.jsx'
 import Dashboard from './pages/Dashboard/Dashboard.jsx'
 import Test from './pages/Test.jsx'
 import About from './pages/About/About.jsx'
+<<<<<<< frontend-pages
+import Stats from "./pages/stats/stats.jsx";
+import History from "./pages/History/History.jsx";
+import Flash from "./pages/flash/flash.jsx";
+
+
+
+=======
 import Account from "./pages/Account/Account";
+>>>>>>> main
 
 /*
  * Each webpage route is defined here: examples below
@@ -44,7 +53,14 @@ createRoot(document.getElementById('root')).render(
           <Route path="/courses" element={<Courses />} />
           <Route path="/dashboard" element={<Dashboard />} />
           <Route path="/about" element={<About />} />
+<<<<<<< frontend-pages
+          <Route path="/stats" element={<Stats />} />
+          <Route path="/history" element={<History />} />
+          <Route path="/flash" element={<Flash />} />
+
+=======
           <Route path="account" element={<Account />} />
+>>>>>>> main
         </Routes>
       </BrowserRouter>
     </MantineProvider>
