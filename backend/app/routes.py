@@ -1,6 +1,8 @@
+import threading
 from flask import request, jsonify
 from openai import OpenAI
-from app.services import create_user, authenticate_user, check_username_exists, check_email_exists, get_user_by_id, upload_textbook_to_supabase, download_textbook_from_supabase
+from app.services import create_user, authenticate_user, check_username_exists, check_email_exists, get_user_by_id, upload_textbook_to_supabase, extract_toc, store_toc
+from app.processing import process_textbook
 from app.config import settings
 import re
 from flask_jwt_extended import create_access_token, jwt_required, get_jwt_identity
@@ -106,14 +108,27 @@ def register_routes(app):
 
         if not file:
             return jsonify({"error": "No file uploaded."}), 400
-        
+
         try:
-            # Upload to Supabase storage and create new database record
+            file_bytes = file.read()
+            # Upload textbook
             textbook = upload_textbook_to_supabase(
                 user_id=user_id,
-                file_bytes=file.read(),
-                filename=file.filename
+                file_bytes=file_bytes,
+                filename=file.filename,
             )
+            textbook_id = textbook['id']
+
+            # Extract TOC and store
+            toc = extract_toc(file_bytes)
+            store_toc(textbook_id, toc)
+
+        
+            # Process textbook in background thread
+            # thread = threading.Thread(target=process_textbook, args=(textbook_id, file_bytes))
+            # thread.daemon = True
+            # thread.start()
+            process_textbook(textbook_id, file_bytes)
 
         except Exception as e:
             return jsonify({"error": str(e)}), 500
@@ -121,7 +136,7 @@ def register_routes(app):
         return jsonify({
             "status": "success",
             "message": "PDF uploaded successfully",
-            "document_id": textbook['id'],
+            "textbook_id": textbook['id'],
             "filename": textbook['title'],
             "storage_path": textbook['storage_path']
         }), 200
