@@ -1,11 +1,12 @@
 from flask import request, jsonify
-from services import upload_doc_to_supabase, create_document_record
+from services import upload_doc_to_supabase, create_document_record, LLMService, QUESTION_TYPES
 from openai import OpenAI
 from app.config import settings
 from app.db import db
 from app.models import User
 import re
 from flask_jwt_extended import create_access_token, jwt_required, get_jwt_identity
+
 
 # ** Where HTTP routes are written **
 # register_routes is called in init.py, giving it access to all the routes below 
@@ -142,25 +143,33 @@ def register_routes(app):
 
     # ** NaviGator Routes **
 
-    @app.route("/api/generate", methods=["POST"])
-    @jwt_required()
-    def generate():
-        user_id = get_jwt_identity()
+    # test this by using curl '-X POST http://127.0.0.1:5001/api/test-recall' in the terminal after running the Flask app
+    @app.post("/api/test-recall")
+    def test_recall():
+        from app.config import settings
 
-        data = request.get_json(silent=True) or {}
-        client = OpenAI(
-            api_key=settings.NAVIGATOR_API_KEY,
-            base_url="https://api.ai.it.ufl.edu/v1/",
-        )
+        # Hardcoded context
+        context = """
+        An array is a linear data structure that stores elements in contiguous memory locations.
+        Each element can be accessed using its index. Arrays typically have a fixed size once created.
+        Accessing an element by index is O(1) time complexity. Page 20.
+        """
 
-        PROMPT = "Generate me a simple recall question type based on the Array Data Structures. It should be four multiple choice options, ensure there is only one correct answer. Provide a very brief explanation validating the correct answer."
+        try:
+            llm = LLMService(api_key=settings.NAVIGATOR_API_KEY)
+            question = llm.generate_question(
+                context=context,
+                question_type="recall",
+                temp = 0.3
+            )
 
-        response = client.responses.create(
-            model="gpt-oss-20b",
-            input=PROMPT,
-        )
+            return jsonify({
+                "status": "success",
+                "question": question
+            }), 200
 
-        return jsonify({
-            "text": response.output_text
-        }), 200
+        except Exception as e:
+            return jsonify({
+                "error": str(e)
+            }), 500
 
