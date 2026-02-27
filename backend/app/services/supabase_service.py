@@ -83,8 +83,8 @@ def delete_textbook(textbook_id: str):
 
 # Chapters #
 
-def store_toc(textbook_id: str, toc: list[dict]):
-    """Store extracted chapter list in the chapters table."""
+def store_toc(textbook_id: str, toc: list[dict], total_pages: int):
+    """Store page_count in textbooks table and extracted chapter list in the chapters table."""
     rows = [
         {
             "textbook_id": textbook_id,
@@ -94,9 +94,10 @@ def store_toc(textbook_id: str, toc: list[dict]):
         }
         for chapter in toc
     ]
+    supabase.table("textbooks").update({"page_count": total_pages}).eq("id", textbook_id).execute()
     supabase.table("chapters").insert(rows).execute()
 
 def get_toc(textbook_id: str) -> list[dict]:
-    result = supabase.table("chapters").select("*").eq("textbook_id", textbook_id).order("start_page", ascending=True).execute()
+    result = supabase.table("chapters").select("*").eq("textbook_id", textbook_id).order("start_page").execute()
     return result.data
 

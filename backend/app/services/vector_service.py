@@ -8,15 +8,8 @@ def upsert_chunks(chunks: list[dict], embeddings: list[list[float]]):
     points = [
         PointStruct(
             id=str(uuid.uuid4()),
-            vector=embedding,
-            payload={
-                "text": chunk["text"],
-                "doc_id": chunk["doc_id"],
-                "chapter": chunk["chapter"],
-                "page": chunk["page"],
-                "section": chunk["section"],
-                "chunk_index": chunk["chunk_index"]
-            }
+            vector={"dense": embedding},
+            payload=chunk
         )
         for chunk, embedding in zip(chunks, embeddings)
     ]

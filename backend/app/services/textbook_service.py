@@ -38,8 +38,7 @@ chunker = HybridChunker(tokenizer=tokenizer, max_tokens=512, overlap=64)
 
 def extract_toc(file: bytes) -> tuple[list[dict], int]:
     """
-    Table of Contents extraction with PyMuPDF
-    Returns chapters with their page ranges
+    Table of Contents extraction with PyMuPDF, returns chapters with their page ranges
     """
     textbook = pymupdf.open(stream=file, filetype="pdf")
     toc = textbook.get_toc()
@@ -47,7 +46,7 @@ def extract_toc(file: bytes) -> tuple[list[dict], int]:
     textbook.close()
 
     if not toc:
-        return [{"title": "Full Document", "start_page": 1, "end_page": total_pages}], total_pages
+        return [{"title": "Full Textbook", "start_page": 1, "end_page": total_pages}], total_pages
 
     chapters = []
     for i, (level, title, start_page) in enumerate(toc):
@@ -80,16 +79,9 @@ def _get_chapter_for_page(page: int, toc: list[dict]) -> str:
 
     return chapter_title  
 
-def parse_and_chunk(file: bytes, doc_id: str, toc: list[dict]) -> list[dict]:
+def parse_and_chunk(file: bytes, user_id: str, textbook_id: str, toc: list[dict]) -> list[dict]:
     """
     Runs Docling on the full textbook and return structured chunks
-
-    Steps:
-      1. Full PDF bytes written to a temp file (Docling requires a file path)
-      2. Docling parses the whole textbook
-      3. HybridChunker splits into chunks
-      4. Each chunk tagged with its chapter
-      5. Temp file deleted
     """
     with tempfile.NamedTemporaryFile(suffix=".pdf", delete=False) as f:
         f.write(file)
@@ -102,16 +94,21 @@ def parse_and_chunk(file: bytes, doc_id: str, toc: list[dict]) -> list[dict]:
         chunks = []
         for chunk in chunker.chunk(textbook):
             meta = chunk.meta
-            page = meta.doc_items[0].prov[0].page_no if meta.doc_items else None
+            doc_items = meta.doc_items
 
-            chapter_title = _get_chapter_for_page(page, toc)
+            pages = sorted({item.prov[0].page_no for item in doc_items if item.prov})
+
+            first_page = pages[0] if pages else None
+            chapter_title = _get_chapter_for_page(first_page, toc)
+            page = first_page if len(pages) == 1 else pages
 
             chunks.append({
+                "user_id": user_id,
+                "textbook_id": textbook_id,
                 "text": chunk.text,
-                "doc_id": doc_id,
                 "chapter": chapter_title,
-                "page": page,
                 "section": meta.headings[0] if meta.headings else None,
+                "page": page,
                 "chunk_index": len(chunks)
             })
 

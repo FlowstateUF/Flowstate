@@ -1,6 +1,6 @@
 from app.services import get_toc, parse_and_chunk, embed_texts, upsert_chunks, update_textbook_status
 
-def process_textbook(textbook_id: str, file_bytes: bytes):
+def process_textbook(user_id: str, textbook_id: str, file_bytes: bytes):
     """
     Runs in a background thread immediately after upload.
 
@@ -14,7 +14,7 @@ def process_textbook(textbook_id: str, file_bytes: bytes):
     try:
         toc = get_toc(textbook_id)
 
-        chunks = parse_and_chunk(file_bytes, textbook_id, toc)
+        chunks = parse_and_chunk(file_bytes, user_id, textbook_id, toc)
 
         texts = [c["text"] for c in chunks]
         embeddings = []

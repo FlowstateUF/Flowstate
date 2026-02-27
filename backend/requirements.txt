@@ -10,3 +10,5 @@ qdrant-client==1.17.0
 supabase==2.28.0
 sentence-transformers==5.2.3
 tiktoken
+huggingface_hub[hf_xet]
+onnxruntime>=1.17.0

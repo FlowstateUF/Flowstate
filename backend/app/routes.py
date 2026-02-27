@@ -120,18 +120,21 @@ def register_routes(app):
             textbook_id = textbook['id']
 
             # Extract TOC and store
-            toc = extract_toc(file_bytes)
-            store_toc(textbook_id, toc)
+            toc, total_pages = extract_toc(file_bytes)
+            store_toc(textbook_id, toc, total_pages)
 
-        
+        except Exception as e:
+            return jsonify({"error": str(e)}), 500
+
+        try:
             # Process textbook in background thread
             # thread = threading.Thread(target=process_textbook, args=(textbook_id, file_bytes))
             # thread.daemon = True
             # thread.start()
-            process_textbook(textbook_id, file_bytes)
+            process_textbook(user_id, textbook_id, file_bytes)
 
         except Exception as e:
-            return jsonify({"error": str(e)}), 500
+            return jsonify({"error": "Failed to process textbook", "details": str(e)}), 500
 
         return jsonify({
             "status": "success",
