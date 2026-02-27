@@ -9,6 +9,7 @@ import {
   IconUser,
   IconSettings,
   IconLogout,
+  IconHistory,
 } from "@tabler/icons-react";
 import brain from "../assets/generic_brain.png";
 import classes from "./NavBar.module.css";
@@ -17,7 +18,7 @@ export default function NavBar({ isAuthed = true }) {
   const navigate = useNavigate();
 
   const handleLogout = () => {
-    // Later: clear auth token
+
     navigate("/login");
   };
 
@@ -25,13 +26,13 @@ export default function NavBar({ isAuthed = true }) {
     <header className={classes.header}>
       <div className={classes.inner}>
 
-        {/* LEFT: brand */}
+        {/* LEFT */}
         <button className={classes.brand} type="button" onClick={() => navigate("/courses")}>
           <img src={brain} alt="Flowstate" className={classes.logo} />
           <span className={classes.brandText}>Flowstate</span>
         </button>
 
-        {/* CENTER: main nav */}
+        {/* CENTER */}
         <Group gap="sm" className={classes.nav}>
           <Button variant="subtle" leftSection={<IconBooks size={18} />} onClick={() => navigate("/courses")}>
             Courses
@@ -44,9 +45,14 @@ export default function NavBar({ isAuthed = true }) {
           <Button variant="subtle" leftSection={<IconInfoCircle size={18} />} onClick={() => navigate("/about")}>
             About
           </Button>
+
+          <Button variant="subtle" leftSection={<IconHistory size={18} />} onClick={() => navigate("/history")}
+          >
+            History
+          </Button>
         </Group>
 
-        {/* RIGHT: auth area */}
+        {}
         <Group gap="sm" className={classes.actions}>
           {!isAuthed ? (
             <Button

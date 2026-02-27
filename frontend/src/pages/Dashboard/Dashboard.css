@@ -2,12 +2,12 @@
   padding: 40px;
 }
 
-/* shared card look */
+
 .dashboard-card {
   border-radius: 14px;
 }
 
-/* Top section layout */
+
 .dashboard-top-row {
   align-items: flex-start;
 }
@@ -35,7 +35,7 @@
   background: var(--mantine-color-gray-3);
 }
 
-/* Textbook dropdown styled like a title */
+
 .dashboard-title-block {
   max-width: 520px;
 }
@@ -44,7 +44,7 @@
   font-weight: 600;
 }
 
-/* Make the selected value feel “title-like” */
+
 .dashboard-textbook-select input {
   font-size: 28px;
   font-weight: 800;
@@ -58,7 +58,6 @@
   flex: 0 0 auto;
 }
 
-/* Buttons row (font fits inside) */
 .dashboard-actions {
   width: 100%;
   display: flex;
@@ -78,7 +77,7 @@
   min-width: 120px;
 }
 
-/* Bottom section layout */
+
 .dashboard-bottom-left {
   flex: 1;
 }
@@ -99,7 +98,7 @@
   place-items: center;
 }
 
-/* CLICKABLE hover → blue border */
+
 .dashboard-clickable {
   cursor: pointer;
   transition: border-color 150ms ease, box-shadow 150ms ease, transform 150ms ease;
@@ -119,7 +118,7 @@
   outline-offset: 2px;
 }
 
-/* Responsive: stack nicely on smaller screens */
+
 @media (max-width: 900px) {
   .dashboard-page {
     padding: 20px;
