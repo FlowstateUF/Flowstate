@@ -2,7 +2,7 @@
   padding: 36px 40px;
 }
 
-/* Header */
+
 .flashpage-header {
   margin-bottom: 18px;
 }
@@ -13,14 +13,14 @@
   letter-spacing: -0.5px;
 }
 
-/* Outer card container matches the mock proportions */
+
 .flipcard-outer {
   border-radius: 18px;
   padding: 0;
   overflow: hidden;
 }
 
-/* Flip container */
+
 .flipcard {
   position: relative;
   width: 100%;
@@ -30,12 +30,12 @@
   background: white;
 }
 
-/* When flipped */
+
 .flipcard.is-flipped {
   transform: rotateY(180deg);
 }
 
-/* Front/back faces */
+
 .flipcard-face {
   position: absolute;
   inset: 0;
@@ -46,7 +46,7 @@
   justify-content: center;
 }
 
-/* Front has placeholder bars */
+
 .flipcard-front {
   gap: 34px;
 }
@@ -65,7 +65,7 @@
   width: 72%;
 }
 
-/* Back side */
+
 .flipcard-back {
   transform: rotateY(180deg);
   gap: 10px;
@@ -81,7 +81,7 @@
   line-height: 1.25;
 }
 
-/* Hint text */
+
 .flip-hint {
   font-size: 14px;
   font-weight: 600;
