@@ -17,8 +17,7 @@ import Flash from "./pages/flash/flash.jsx";
 import Quiz from "./pages/Quiz/Quiz.jsx";
 import QuizResults from "./pages/QuizResults/QuizResults.jsx";
 import Summarize from "./pages/Summarize/Summarize.jsx";
-
-
+import Account from "./pages/Account/Account.jsx";
 
 /*
  * Each webpage route is defined here: examples below
@@ -57,7 +56,7 @@ createRoot(document.getElementById('root')).render(
           <Route path="/quiz" element={<Quiz />} />
           <Route path="/quiz/results" element={<QuizResults />} />
           <Route path="/summarize" element={<Summarize />} />
-
+          <Route path="/account" element={<Account />} />
         </Routes>
       </BrowserRouter>
     </MantineProvider>
