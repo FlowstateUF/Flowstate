@@ -1,8 +1,7 @@
 from flask import Flask
 from flask_cors import CORS
-from app.db import init_db
-from app import models
 from app.config import settings
+from app.clients import init_supabase, init_qdrant
 from flask_jwt_extended import JWTManager
 import os
 
@@ -16,10 +15,13 @@ def create_app():
     app.config['SQLALCHEMY_TRACK_MODIFICATIONS'] = False
     app.config["SECRET_KEY"] = settings.SECRET_KEY
     app.config["JWT_SECRET_KEY"] = os.environ.get("JWT_SECRET_KEY")
+
+    init_supabase()
+    init_qdrant()
+    
     jwt = JWTManager(app)
 
     CORS(app, resources={r"/*": {"origins": ["http://localhost:5173","http://localhost:3000"]}})
-    init_db(app)
     
     # Register routes
     from app import routes

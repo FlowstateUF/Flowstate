@@ -1,9 +1,9 @@
+import threading
 from flask import request, jsonify
-from services import upload_doc_to_supabase, create_document_record
 from openai import OpenAI
+from app.services import create_user, authenticate_user, check_username_exists, check_email_exists, get_user_by_id, upload_textbook_to_supabase, extract_toc, store_toc
+from app.processing import process_textbook
 from app.config import settings
-from app.db import db
-from app.models import User
 import re
 from flask_jwt_extended import create_access_token, jwt_required, get_jwt_identity
 
@@ -52,26 +52,20 @@ def register_routes(app):
             return jsonify({"error": "password must include a number"}), 400
 
         # Ensure username and email aren't already being used
-        if User.query.filter_by(username=username).first():
-            return jsonify({"error": "username already taken"}), 409
-        if User.query.filter_by(email=email).first():
-            return jsonify({"error": "email already in use"}), 409
-
-        # Create user + hash password
-        user = User(username=username, email=email)
-        user.set_password(password)  
+        if check_username_exists(username):
+            return jsonify({"error": "Username already taken"}), 409
+        if check_email_exists(email):
+            return jsonify({"error": "Email already in use"}), 409
 
         try:
-            db.session.add(user)
-            db.session.commit()
+            user = create_user(username, password, email)
         except Exception as e:
-            db.session.rollback()
             return jsonify({"error": "Database error", "details": str(e)}), 500
 
         return jsonify({
             "status": "success",
             "message": "User registered",
-            "user": {"id": user.id, "username": user.username, "email": user.email}
+            "user": {"id": user['id'], "username": user['username'], "email": user['email']}
         }), 201
 
     @app.post("/api/login")
@@ -81,63 +75,73 @@ def register_routes(app):
         email = (data.get("email") or "").strip().lower()
         password = data.get("password") or ""
 
-        user = User.query.filter_by(email=email).first()
+        user = authenticate_user(email, password)
 
-        if not user or not user.check_password(password):
-            return jsonify({"error": "Invalid email or password"}), 401
+        if "error" in user:
+            return jsonify(user), 401
 
-        token = create_access_token(identity=str(user.id))
+        token = create_access_token(identity=str(user['id']))
 
         return jsonify({
             "message": "Login successful",
             "access_token": token,
-            "user": {"id": user.id, "username": user.username}
+            "user": {"id": user['id'], "username": user['username'], "email": user['email']}
         }), 200
 
     @app.get("/api/me")
     @jwt_required()
     def me():
         user_id = get_jwt_identity()
-        user = User.query.get(user_id)
+        user = get_user_by_id(user_id)
         if not user:
             return jsonify({"error": "User not found"}), 404
-        return jsonify({"id": user.id, "username": user.username, "email": user.email}), 200
+        return jsonify({"id": user['id'], "username": user['username'], "email": user['email']}), 200
 
 
     # ** Textbook Behavior Routers **
     
     @app.post("/api/upload")
     @jwt_required()
-    def upload_document():
+    def upload_textbook():
         user_id = get_jwt_identity()
         file = request.files.get("file")
 
         if not file:
             return jsonify({"error": "No file uploaded."}), 400
-        
-        try:
-            # Upload to Supabase Storage
-            storage_path = upload_doc_to_supabase(
-                user_id=user_id,
-                file_bytes=file.read(),
-                filename=file.filename
-            )
 
-            # Create DB record
-            doc = create_document_record(
+        try:
+            file_bytes = file.read()
+            # Upload textbook
+            textbook = upload_textbook_to_supabase(
                 user_id=user_id,
+                file_bytes=file_bytes,
                 filename=file.filename,
-                storage_path=storage_path
             )
+            textbook_id = textbook['id']
+
+            # Extract TOC and store
+            toc, total_pages = extract_toc(file_bytes)
+            store_toc(textbook_id, toc, total_pages)
+
         except Exception as e:
             return jsonify({"error": str(e)}), 500
+
+        try:
+            # Process textbook in background thread
+            # thread = threading.Thread(target=process_textbook, args=(textbook_id, file_bytes))
+            # thread.daemon = True
+            # thread.start()
+            process_textbook(user_id, textbook_id, file_bytes)
+
+        except Exception as e:
+            return jsonify({"error": "Failed to process textbook", "details": str(e)}), 500
 
         return jsonify({
             "status": "success",
             "message": "PDF uploaded successfully",
-            "document_id": doc.id,
-            "filename": doc.filename,
-            "storage_path": storage_path
+            "textbook_id": textbook['id'],
+            "filename": textbook['title'],
+            "storage_path": textbook['storage_path']
         }), 200
 
     # ** NaviGator Routes **
