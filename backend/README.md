@@ -7,7 +7,7 @@ This is the backend code for Flowstate, utilizing Flask.
  - this installs all dependencies specified there
  - add secrets to .env
     - create a file called '.env' in the backend folder
-    - generate a personal Navigator API key (Navigator Toolkit online)
+    - generate a personal Navigator API key (Navigator Toolkit online) using gpt-oss-20b model
     - Get the Supabase keys Aaron emailed
     - Define the keys in the .env folder
 
@@ -22,24 +22,29 @@ This is the backend code for Flowstate, utilizing Flask.
 - app/init.py: this creates the flask app, and uses the db and routes
     - various config and extensions could be added here down the line
 
-- app/db.py: this is where the database is initialized, and all models are created and defined
-    - this is where tables and there schema are created
-
 - app/routes.py: this is where HTTP routes can be written, rather than writing them all in init.py
     - this is where additional website routes will be added to handle various requests
 
-- app/supabase_client.py: this is where the supabase storage client is initialized
-    - uses credentials from .env
+- app/clients.py: this is where clients are initialized
+    - supabase, qdrant, navigator(?)
 
-- services/init.py: this allows for services to be seen as a package
+- app/processing.py: this is where the textbook processing pipeline is
+
+- app/services/init.py: this allows for services to be seen as a package
     - imports service functions for easy external imports
 
-- services/document_service.py: this is where all document-related operations are written
+- app/services/textbook_service.py: this is where all textbook-related operations are written
+    - textbook parsing, chunking, embeddings, vectors
 
-- services/parsing_service.py: this is where all document parsing operations are written
-    - might merge this with document_service.py
+- app/services/supabase_service.py: this is where all supabase storage and database operations are written
+    - user creation, authentication
+    - upload textbook to supabase storage and database
 
-- services/storage_service.py: this is where all supabase storage operations are written
-
-- services/study_servicel.py: this is where all study tools will be created/written
+- app/services/generation_service.py: this is where all study tools will be created/written
     - Create questions, flashcards, quizes, and more
+
+## Notes
+- Using threading for processing document
+    - In the future can use Celery Redis
+- Can think about using Supabase Auth
+- Can improve image embeddings

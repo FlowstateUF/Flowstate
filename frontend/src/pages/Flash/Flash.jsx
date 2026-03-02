@@ -7,7 +7,7 @@ import "./flash.css";
 export default function Flash() {
   const [flipped, setFlipped] = useState(false);
 
-  // Click anywhere to flip (except clicks inside navbar links)
+
   useEffect(() => {
     const onClick = (e) => {
       // If you click a link/button/input, don’t flip (helps with NavBar)

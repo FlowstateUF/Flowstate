@@ -185,7 +185,7 @@ function DonutChart() {
 
       <Group justify="center">
         <svg width="180" height="180" viewBox="0 0 180 180">
-          {/* background ring */}
+          {}
           <circle
             cx={cx}
             cy={cy}

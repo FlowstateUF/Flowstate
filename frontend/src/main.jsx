@@ -14,7 +14,10 @@ import About from './pages/About/About.jsx'
 import Stats from "./pages/stats/stats.jsx";
 import History from "./pages/History/History.jsx";
 import Flash from "./pages/flash/flash.jsx";
-import Account from "./pages/Account/Account";
+import Quiz from "./pages/Quiz/Quiz.jsx";
+import QuizResults from "./pages/QuizResults/QuizResults.jsx";
+import Summarize from "./pages/Summarize/Summarize.jsx";
+import Account from "./pages/Account/Account.jsx";
 
 /*
  * Each webpage route is defined here: examples below
@@ -50,7 +53,10 @@ createRoot(document.getElementById('root')).render(
           <Route path="/stats" element={<Stats />} />
           <Route path="/history" element={<History />} />
           <Route path="/flash" element={<Flash />} />
-          <Route path="account" element={<Account />} />
+          <Route path="/quiz" element={<Quiz />} />
+          <Route path="/quiz/results" element={<QuizResults />} />
+          <Route path="/summarize" element={<Summarize />} />
+          <Route path="/account" element={<Account />} />
         </Routes>
       </BrowserRouter>
     </MantineProvider>

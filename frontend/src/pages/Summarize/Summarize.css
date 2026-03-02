@@ -1,0 +1,46 @@
+.summarize-page {
+  padding: 32px 0 48px;
+}
+
+.summarize-header {
+  margin-bottom: 14px;
+}
+
+.summarize-counter {
+  opacity: 0.75;
+}
+
+.summarize-progress-row {
+  margin-bottom: 18px;
+}
+
+.summarize-progress-label {
+  min-width: 70px;
+  opacity: 0.8;
+}
+
+.summarize-progress {
+  flex: 1;
+}
+
+.summarize-card {
+  border-radius: 18px;
+}
+
+.summarize-chapter-title {
+  font-size: 22px;
+  opacity: 0.9;
+}
+
+.summarize-summary-text {
+  line-height: 1.6;
+  opacity: 0.85;
+}
+
+.summarize-nav {
+  margin-top: 18px;
+}
+
+.summarize-return {
+  margin-top: 18px;
+}

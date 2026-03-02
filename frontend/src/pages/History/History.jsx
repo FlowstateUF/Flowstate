@@ -13,7 +13,7 @@ export default function History() {
   const navigate = useNavigate();
 
   const goToBook = (bookId) => {
-    // You can change this later to go to /courses/:id, etc.
+
     navigate(`/dashboard?textbook=${encodeURIComponent(bookId)}`);
   };
 
@@ -47,7 +47,7 @@ export default function History() {
                     if (e.key === "Enter" || e.key === " ") goToBook(t.id);
                   }}
                 >
-                  {/* Big cover placeholder */}
+                  {}
                   <div className="history-cover">
                     <div className="history-img-icon">
                       <svg width="64" height="64" viewBox="0 0 24 24" fill="none">
@@ -69,7 +69,7 @@ export default function History() {
                     </div>
                   </div>
 
-                  {/* Optional: label under the cover (comment out if you want pure mock look) */}
+                  {}
                   <Text fw={600} mt="sm" className="history-book-label">
                     {t.name}
                   </Text>

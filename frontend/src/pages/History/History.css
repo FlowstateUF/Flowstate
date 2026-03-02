@@ -13,12 +13,12 @@
   font-size: 16px;
 }
 
-/* Keep the covers in a row and spaced like the mock */
+
 .history-grid {
   margin-top: 12px;
 }
 
-/* Clickable book card */
+
 .history-book {
   border-radius: 12px;
   padding: 18px;
@@ -36,17 +36,17 @@
   transform: translateY(0px);
 }
 
-/* Big gray cover placeholder */
+
 .history-cover {
   width: 100%;
   aspect-ratio: 3 / 4;
   border-radius: 10px;
-  background: #cfd6df; /* close to mock gray */
+  background: #cfd6df;
   display: grid;
   place-items: center;
 }
 
-/* Icon inside cover */
+
 .history-img-icon {
   width: 88px;
   height: 64px;
@@ -56,12 +56,12 @@
   place-items: center;
 }
 
-/* Optional label styling */
+
 .history-book-label {
   text-align: left;
 }
 
-/* Mobile spacing */
+
 @media (max-width: 900px) {
   .history-page {
     padding: 20px;

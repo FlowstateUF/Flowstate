@@ -96,7 +96,8 @@ export default function Dashboard() {
                   </SimpleGrid>
 
                   <Group gap="sm" className="dashboard-actions">
-                    <Button radius="xl" fullWidth>
+                    <Button radius="xl" fullWidth
+                    onClick={() => navigate("/Summarize")}>
                       Summarize
                     </Button>
 
@@ -109,7 +110,10 @@ export default function Dashboard() {
                       Flashcards
                     </Button>
 
-                    <Button radius="xl" fullWidth>
+                    <Button radius="xl" fullWidth
+                    onClick={() => navigate("/quiz")}>
+
+
                       Quizzes
                     </Button>
                   </Group>
