@@ -1,6 +1,6 @@
-import json
+import json, re
 from openai import OpenAI
-from services.llm.question_prompts import MC_BASE_PROMPT, QUESTION_TYPES
+from services.llm.question_prompts import MC_BASE_PROMPT, QUESTION_TYPES, FLASHCARD_PROMPT, SUMMARY_PROMPT
 
 # Class that allows us to construct each prompt and recieve output fromt the LLM
 class LLMService:
@@ -8,7 +8,7 @@ class LLMService:
     def __init__(self, api_key):
         self.client = OpenAI(
             api_key=api_key,
-            base_url="https://api.ai.it.ufl.edu/v1/"
+            base_url="https://api.ai.it.ufl.edu"
         )
         self.model = "gpt-oss-20b"
 
@@ -44,7 +44,47 @@ class LLMService:
             raise ValueError(f"Response missing: {missing}")
         
         return data
+        
+    # Parse JSON for flashcards and summaries    
+    def _parse_json(self, response_text: str):
+        if not response_text or not response_text.strip():
+            raise ValueError("LLM returned empty text")
+
+        txt = response_text.strip()
+
+        txt = re.sub(r"^```(?:json)?\s*", "", txt)
+        txt = re.sub(r"\s*```$", "", txt).strip()
+
+        try:
+            data = json.loads(txt)
+        except json.JSONDecodeError:
+            m = re.search(r"(\{.*\}|\[.*\])", txt, re.DOTALL)
+            if not m:
+                raise ValueError(f"LLM didn't return valid JSON. Got: {txt[:200]!r}")
+            data = json.loads(m.group(1))
+
+        if isinstance(data, dict) and "error" in data:
+            raise ValueError(f"LLM error: {data['error']}")
+        return data
     
+    def _get_response_text(self, response) -> str:
+        text = getattr(response, "output_text", None)
+        if isinstance(text, str) and text.strip():
+            return text.strip()
+
+        chunks = []
+        output = getattr(response, "output", None) or []
+        for item in output:
+            content = getattr(item, "content", None) or []
+            for part in content:
+                part_type = getattr(part, "type", None)
+                part_text = getattr(part, "text", None)
+                if part_type in ("output_text", "text") and isinstance(part_text, str):
+                    chunks.append(part_text)
+
+        joined = "\n".join(chunks).strip()
+        return joined
+
     # Generates a question using the given context and question type
     def generate_question(self, context, question_type, temp):
 
@@ -60,3 +100,40 @@ class LLMService:
         
         # Parse and return the result
         return self._parse_response(response.output_text)
+
+    def generate_flashcards(self, context, num_cards=10, temp=0.3):
+        prompt = FLASHCARD_PROMPT.format(
+            context=context,
+            num_cards=num_cards
+        )
+
+        response = self.client.responses.create(
+            model=self.model,
+            input=prompt,
+            temperature=temp
+        )
+
+        data = self._parse_json(response.output_text)
+
+        if "flashcards" not in data or not isinstance(data["flashcards"], list):
+            raise ValueError("Response missing 'flashcards' list")
+
+        return data
+
+    def generate_summary(self, context, temp=0.3):
+        prompt = SUMMARY_PROMPT.format(context=context)
+
+        response = self.client.responses.create(
+            model=self.model,
+            input=prompt,
+            temperature=temp
+        )
+
+        raw_text = self._get_response_text(response)
+        data = self._parse_json(raw_text)
+        # data = self._parse_json(response.output_text)
+
+        if "summary" not in data or not isinstance(data["summary"], dict):
+            raise ValueError("Response missing 'summary' object")
+
+        return data

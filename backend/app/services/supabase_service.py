@@ -101,3 +101,8 @@ def get_toc(textbook_id: str) -> list[dict]:
     result = supabase.table("chapters").select("*").eq("textbook_id", textbook_id).order("start_page").execute()
     return result.data
 
+def get_textbook_page_count(textbook_id: str) -> int | None:
+    res = supabase.table("textbooks").select("page_count").eq("id", textbook_id).single().execute()
+    if not res.data:
+        return None
+    return res.data.get("page_count")
