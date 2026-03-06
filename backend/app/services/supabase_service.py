@@ -16,6 +16,10 @@ def create_user(username, password, email) -> dict:
 
 def authenticate_user(email, password) -> dict:
     response = supabase.table('users').select('*').eq('email', email).execute()
+
+    if not response.data:  
+        return {"error": "Invalid email or password"}
+    
     user = response.data[0]
 
     if user and check_password_hash(user['password'], password):
@@ -34,7 +38,10 @@ def check_email_exists(email) -> bool:
     return len(response.data) > 0
 
 def get_user_by_id(user_id) -> dict:
-    return supabase.table('users').select('*').eq('id', user_id).execute().data[0]
+    result = supabase.table('users').select('*').eq('id', user_id).execute()
+    if not result.data:
+        return {"error": "User not found"}
+    return result.data[0]
 
 
 # Textbooks #
