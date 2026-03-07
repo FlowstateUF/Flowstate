@@ -122,7 +122,7 @@ function Courses() {
           />
   
           {selectedFile && (
-            <p className="status-text">
+            <p className="status-text"> 
               Selected: <strong>{selectedFile.name}</strong>
             </p>
           )}

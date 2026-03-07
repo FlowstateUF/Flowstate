@@ -1,4 +1,4 @@
-import threading
+import threading, time, traceback
 from flask import request, jsonify
 from openai import OpenAI
 from app.services import create_user, authenticate_user, check_username_exists, check_email_exists, get_user_by_id, upload_textbook_to_supabase, extract_toc, store_toc
@@ -6,6 +6,95 @@ from app.processing import process_textbook
 from app.config import settings
 import re
 from flask_jwt_extended import create_access_token, jwt_required, get_jwt_identity
+from services import LLMService, QUESTION_TYPES 
+from services.llm.question_prompts import ( MC_BASE_PROMPT, FLASHCARD_PROMPT, SUMMARY_PROMPT, )
+from app.clients import qdrant, supabase
+from app.services import embed_query
+
+from qdrant_client.models import Filter, FieldCondition, MatchValue
+
+def verify_textbook_owner(user_id: str, textbook_id: str) -> bool:
+    res = (
+        supabase.table("textbooks")
+        .select("id")
+        .eq("id", textbook_id)
+        .eq("user_id", user_id)
+        .limit(1)
+        .execute()
+    )
+    return bool(res.data)
+
+
+def retrieve_context(user_id: str, textbook_id: str, query: str, top_k: int = 8) -> str:
+    qvec = embed_query(query)
+
+    flt = Filter(
+        must=[
+            FieldCondition(key="user_id", match=MatchValue(value=str(user_id))),
+            FieldCondition(key="textbook_id", match=MatchValue(value=str(textbook_id))),
+        ]
+    )
+
+    res = qdrant.query_points(
+        collection_name="chunks",
+        query=qvec,
+        using="dense",
+        query_filter=flt,
+        limit=top_k,
+        with_payload=True,
+    )
+
+    hits = res.points or []
+    if not hits:
+        return ""
+
+    parts = []
+    for p in hits:
+        payload = p.payload or {}
+        text = (payload.get("text") or payload.get("content") or "").strip()
+        if not text:
+            continue
+
+        citation = payload.get("citation")
+        if not citation:
+            ps = payload.get("page_start") or payload.get("page_number")
+            pe = payload.get("page_end")
+            if ps is not None:
+                citation = f"Page {ps}" if pe in (None, ps) else f"Pages {ps}-{pe}"
+
+        parts.append(f"{citation}: {text}" if citation else text)
+
+    return "\n\n".join(parts)
+
+def _fetch_chapter_chunks(textbook_id: str, chapter_id: str, limit: int = 60) -> list[dict]:
+    # Pull the first N chunks in that chapter (ordered)
+    res = (
+        supabase.table("chunks")
+        .select("id, page_number, rindex, content")
+        .eq("textbook_id", textbook_id)
+        .eq("chapter_id", chapter_id)
+        .order("page_number")
+        .order("rindex")
+        .limit(limit)
+        .execute()
+    )
+    return res.data or []
+
+def _build_context_from_chunks(rows: list[dict], max_chars: int = 12000) -> str:
+    parts = []
+    total = 0
+    for r in rows:
+        content = (r.get("content") or "").strip()
+        if not content:
+            continue
+        page = r.get("page_number")
+        prefix = f"Page {page}: " if page is not None else ""
+        snippet = prefix + content
+        if total + len(snippet) > max_chars:
+            break
+        parts.append(snippet)
+        total += len(snippet)
+    return "\n\n".join(parts)
 
 # ** Where HTTP routes are written **
 # register_routes is called in init.py, giving it access to all the routes below 
@@ -144,27 +233,112 @@ def register_routes(app):
             "storage_path": textbook['storage_path']
         }), 200
 
+   
     # ** NaviGator Routes **
 
-    @app.route("/api/generate", methods=["POST"])
+    # test this by using curl '-X POST http://127.0.0.1:5001/api/test-recall' in the terminal after running the Flask app
+    # curl.exe -X POST http://127.0.0.1:5001/api/test-recall < powershell 
+    @app.post("/api/test-recall")
+    def test_recall():
+        from app.config import settings
+
+        # Hardcoded context
+        context = """
+        An array is a linear data structure that stores elements in contiguous memory locations.
+        Each element can be accessed using its index. Arrays typically have a fixed size once created.
+        Accessing an element by index is O(1) time complexity. Page 20.
+        """
+
+        try:
+            llm = LLMService(api_key=settings.NAVIGATOR_API_KEY)
+            question = llm.generate_question(
+                context=context,
+                question_type="recall",
+                temp = 0.3
+            )
+
+            return jsonify({
+                "status": "success",
+                "question": question
+            }), 200
+
+        except Exception as e:
+            return jsonify({
+                "error": str(e)
+            }), 500
+
+    @app.post("/api/generate/summary")
     @jwt_required()
-    def generate():
+    def generate_summary():
         user_id = get_jwt_identity()
-
         data = request.get_json(silent=True) or {}
-        client = OpenAI(
-            api_key=settings.NAVIGATOR_API_KEY,
-            base_url="https://api.ai.it.ufl.edu/v1/",
-        )
 
-        PROMPT = "Generate me a simple recall question type based on the Array Data Structures. It should be four multiple choice options, ensure there is only one correct answer. Provide a very brief explanation validating the correct answer."
+        textbook_id = data.get("textbook_id")
+        topic = (data.get("topic") or "").strip()
 
-        response = client.responses.create(
-            model="gpt-oss-20b",
-            input=PROMPT,
+        if not textbook_id:
+            return jsonify({"error": "textbook_id required"}), 400
+
+        if not verify_textbook_owner(user_id, textbook_id):
+            return jsonify({"error": "Textbook not found or unauthorized"}), 404
+
+        retrieval_query = topic if topic else "main ideas key terms"
+        context = retrieve_context(user_id, textbook_id, retrieval_query, top_k=14)
+        if not context.strip():
+            return jsonify({"error": "Insufficient context"}), 400
+
+        llm = LLMService(api_key=settings.NAVIGATOR_API_KEY)
+
+        result = llm.generate_summary(context=context, temp=0.3)
+        return jsonify({"status": "success", **result}), 200
+
+    
+    # Add inside register_routes(app):
+    @app.post("/api/test-summary-chapter")
+    @jwt_required()
+    def test_summary_chapter():
+        user_id = get_jwt_identity()
+        data = request.get_json(silent=True) or {}
+
+        textbook_id = data.get("textbook_id")
+        chapter_id = data.get("chapter_id")
+        temp = float(data.get("temp", 0.3))
+
+        if not textbook_id or not chapter_id:
+            return jsonify({"error": "textbook_id and chapter_id required"}), 400
+
+        # ownership check like your other routes
+        owned = (
+            supabase.table("textbooks")
+            .select("id")
+            .eq("id", textbook_id)
+            .eq("user_id", user_id)
+            .limit(1)
+            .execute()
         )
+        if not owned.data:
+            return jsonify({"error": "Textbook not found or unauthorized"}), 404
+
+        rows = _fetch_chapter_chunks(textbook_id, chapter_id, limit=80)
+        if not rows:
+            return jsonify({"error": "No chunks found for that chapter_id"}), 400
+
+        context = _build_context_from_chunks(rows, max_chars=14000)
+        if not context.strip():
+            return jsonify({"error": "Empty context after filtering"}), 400
+
+        llm = LLMService(api_key=settings.NAVIGATOR_API_KEY)
+        result = llm.generate_summary(context=context, temp=temp)
 
         return jsonify({
-            "text": response.output_text
+            "status": "success",
+            "chapter_id": chapter_id,
+            "chunks_used": len(rows),
+            "context_preview": context[:800],
+            **result
         }), 200
 
+    @app.get("/api/debug/qdrant-vectors")
+    def debug_qdrant_vectors():
+        info = qdrant.get_collection("chunks")
+        return jsonify(str(info.config.params.vectors))

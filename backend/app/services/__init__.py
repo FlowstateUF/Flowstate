@@ -12,7 +12,8 @@ from .supabase_service import (
     update_textbook_status,
     delete_textbook,
     store_toc,
-    get_toc
+    get_toc,
+    get_textbook_page_count,
 )
-from .textbook_service import extract_toc, parse_and_chunk
+from .textbook_service import extract_toc, parse_and_chunk, pdf_page_range
 from .vector_service import upsert_chunks
