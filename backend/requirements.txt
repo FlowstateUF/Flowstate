@@ -12,3 +12,5 @@ sentence-transformers==5.2.3
 tiktoken
 huggingface_hub[hf_xet]
 onnxruntime>=1.17.0
+celery
+redis
