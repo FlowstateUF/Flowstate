@@ -1,6 +1,6 @@
 import json, re
 from openai import OpenAI
-from services.llm.question_prompts import MC_BASE_PROMPT, QUESTION_TYPES, FLASHCARD_PROMPT, SUMMARY_PROMPT
+from .question_prompts import MC_BASE_PROMPT, QUESTION_TYPES, FLASHCARD_PROMPT, SUMMARY_PROMPT, PRETEST_BATCH_PROMPT
 
 # Class that allows us to construct each prompt and recieve output fromt the LLM
 class LLMService:
@@ -137,3 +137,26 @@ class LLMService:
             raise ValueError("Response missing 'summary' object")
 
         return data
+    
+    def generate_pretest(self, context, temp):
+        prompt = PRETEST_BATCH_PROMPT.format(context=context)
+
+        response = self.client.responses.create(
+            model=self.model,
+            input=prompt,
+            temperature=temp
+        )
+
+        data = self._parse_json(response.output_text)
+
+        if "questions" not in data or not isinstance(data["questions"], list):
+            raise ValueError("Response missing 'questions' list")
+
+        # Validate each question has required fields before storing
+        required = ["type", "question", "choices", "correct_answer", "explanation", "citation"]
+        for i, q in enumerate(data["questions"]):
+            missing = [f for f in required if f not in q]
+            if missing:
+                raise ValueError(f"Question {i} missing fields: {missing}")
+
+        return data["questions"]

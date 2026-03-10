@@ -230,3 +230,62 @@ Return ONLY valid JSON in this exact format:
   ]
 }}
 """
+
+PRETEST_BATCH_PROMPT = """You are an educational assessment expert creating a pretest for a textbook chapter.
+
+CRITICAL RULES:
+- Use ONLY information from the provided context below
+- Do NOT make up information or use outside knowledge
+- Each question must test a DIFFERENT concept — no overlapping topics
+- Cover the most important concepts from the context
+- Each question must be fully self-contained and understandable on its own
+
+QUESTION DISTRIBUTION (10 total):
+- 3 Recall (Bloom's Level 1): test direct facts, definitions, terminology
+- 3 Understand (Bloom's Level 2): test comprehension, paraphrasing, comparison
+- 2 Apply (Bloom's Level 3): include a short scenario, test single concept application  
+- 2 Analyze (Bloom's Level 4): test comparing/contrasting multiple concepts
+
+QUESTION STRUCTURE RULES (apply to all):
+- Exactly 4 choices labeled A, B, C, D
+- Only one correct answer
+- All choices similar in length and grammatical structure
+- No "All of the above" or "None of the above"
+- No absolute cues ("always", "never") unless in context
+
+Context:
+{context}
+
+The top-level JSON must contain exactly one key: "questions"
+Return ONLY valid JSON in this exact format for all 10 questions:
+{{
+  "questions": [
+    {{
+      "type": "recall",
+      "question": "Question text here",
+      "choices": {{
+        "A": "First option",
+        "B": "Second option",
+        "C": "Third option",
+        "D": "Fourth option"
+      }},
+      "correct_answer": "A",
+      "explanation": "Brief explanation grounded in the context",
+      "citation": "Page X"
+    }},
+    {{
+      "type": "understand",
+      "question": "Question text here",
+      "choices": {{
+        "A": "First option",
+        "B": "Second option",
+        "C": "Third option",
+        "D": "Fourth option"
+      }},
+      "correct_answer": "B",
+      "explanation": "Brief explanation grounded in the context",
+      "citation": "Page X"
+    }}
+  ]
+}}
+"""

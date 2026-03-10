@@ -1,13 +1,12 @@
+import traceback
 import threading, time, traceback
 from flask import request, jsonify
 from openai import OpenAI
-from app.services import create_user, authenticate_user, check_username_exists, check_email_exists, get_user_by_id, upload_textbook_to_supabase, extract_toc, store_toc
+from app.services import create_user, authenticate_user, check_username_exists, check_email_exists, get_user_by_id, upload_textbook_to_supabase, extract_toc, store_toc, LLMService, QUESTION_TYPES, MC_BASE_PROMPT, FLASHCARD_PROMPT, SUMMARY_PROMPT
 from app.processing import process_textbook
 from app.config import settings
 import re
 from flask_jwt_extended import create_access_token, jwt_required, get_jwt_identity
-from services import LLMService, QUESTION_TYPES 
-from services.llm.question_prompts import ( MC_BASE_PROMPT, FLASHCARD_PROMPT, SUMMARY_PROMPT, )
 from app.clients import qdrant, supabase
 from app.services import embed_query
 
@@ -192,6 +191,7 @@ def register_routes(app):
     @app.post("/api/upload")
     @jwt_required()
     def upload_textbook():
+        print("[upload] request received")
         user_id = get_jwt_identity()
         file = request.files.get("file")
 
@@ -199,8 +199,31 @@ def register_routes(app):
             return jsonify({"error": "No file uploaded."}), 400
 
         try:
+            print("[upload] reading file")
             file_bytes = file.read()
+
+            # Check if this user already uploaded this file
+            existing = (
+                supabase.table("textbooks")
+                .select("id, status")
+                .eq("user_id", user_id)
+                .eq("title", file.filename)
+                .limit(1)
+                .execute()
+            )
+
+            if existing.data:
+                existing_id = existing.data[0]["id"]
+                print(f"[upload] '{file.filename}' already parsed before, skipping")
+
+                return jsonify({
+                    "status": "exists",
+                    "message": "This textbook was already uploaded and parsed",
+                    "textbook_id": existing_id
+                }), 200
+            
             # Upload textbook
+            print("[upload] uploading to supabase")
             textbook = upload_textbook_to_supabase(
                 user_id=user_id,
                 file_bytes=file_bytes,
@@ -209,17 +232,21 @@ def register_routes(app):
             textbook_id = textbook['id']
 
             # Extract TOC and store
+            print("[upload] extracting toc")
             toc, total_pages = extract_toc(file_bytes)
+            print("[upload] storing toc")
             store_toc(textbook_id, toc, total_pages)
 
         except Exception as e:
+            print("[upload] FAILED:", repr(e))
+            traceback.print_exc()
             return jsonify({"error": str(e)}), 500
 
         try:
-            # Process textbook in background thread
-            # thread = threading.Thread(target=process_textbook, args=(textbook_id, file_bytes))
-            # thread.daemon = True
-            # thread.start()
+            
+            # TODO: Add celery functionality
+            # CELERY: replace with ingest_task.delay(user_id, textbook_id, file_b64)
+            # and return 202 immediately instead of waiting
             process_textbook(user_id, textbook_id, file_bytes)
 
         except Exception as e:

@@ -44,10 +44,14 @@ def get_user_by_id(user_id) -> dict:
     return result.data[0]
 
 
-# Textbooks #
-
+# Textbooks 
 def upload_textbook_to_supabase(user_id: int, file_bytes: bytes, filename: str) -> dict:
     storage_path = f"{user_id}/{filename}"
+
+    try:
+        supabase.storage.from_('textbooks').remove([storage_path])
+    except Exception:
+        pass
 
     supabase.storage.from_('textbooks').upload(
         path=storage_path,
@@ -113,3 +117,24 @@ def get_textbook_page_count(textbook_id: str) -> int | None:
     if not res.data:
         return None
     return res.data.get("page_count")
+
+
+def store_pretest(textbook_id: str, chapter_id: str, chapter_title: str, questions: list[dict]):
+    supabase.table("pretests").insert({
+        "textbook_id": textbook_id,
+        "chapter_id": chapter_id,
+        "chapter_title": chapter_title,
+        "questions": questions,
+        "status": "ready",
+    }).execute()
+
+def get_pretest(textbook_id: str, chapter_id: str) -> dict | None:
+    result = (
+        supabase.table("pretests")
+        .select("*")
+        .eq("textbook_id", textbook_id)
+        .eq("chapter_id", chapter_id)
+        .single()
+        .execute()
+    )
+    return result.data
