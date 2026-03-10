@@ -46,7 +46,13 @@ def init_qdrant():
             }
         )
 
-        qdrant.create_payload_index(collection_name="chunks", field_name="user_id", field_schema="keyword", field_name_in_tenant=True)
+        qdrant.create_payload_index(collection_name="chunks", field_name="user_id", field_schema="keyword")
         qdrant.create_payload_index(collection_name="chunks", field_name="textbook_id", field_schema="keyword")
-        qdrant.create_payload_index(collection_name="chunks", field_name="page", field_schema="integer")
+        qdrant.create_payload_index(collection_name="chunks", field_name="chapter", field_schema="keyword")
+        qdrant.create_payload_index(collection_name="chunks", field_name="page_start", field_schema="integer")
+
+    # Always ensure indexes exist even if collection was created before
+    else:
+        qdrant.create_payload_index(collection_name="chunks", field_name="chapter", field_schema="keyword")
+        qdrant.create_payload_index(collection_name="chunks", field_name="textbook_id", field_schema="keyword")
 

@@ -48,3 +48,21 @@ This is the backend code for Flowstate, utilizing Flask.
     - In the future can use Celery Redis
 - Can think about using Supabase Auth
 - Can improve image embeddings
+
+## Processing Workflow
+    User uploads PDF
+        ↓
+    Flask returns 202 immediately  ← user can navigate freely
+        ↓
+    Redis queue
+        ↓
+    ingest_task (worker 1)
+        → parses all pages
+        → embeds + upserts
+        → marks textbook "ready"  ← textbook searchable from here
+        → pretest_task.delay()    ← fires and forgets
+        ↓
+    pretest_task (worker 2, runs in parallel)
+        → generate_all_pretests
+        → stores in Supabase
+
