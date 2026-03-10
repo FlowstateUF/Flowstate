@@ -14,6 +14,10 @@ from .supabase_service import (
     store_toc,
     get_toc,
     get_textbook_page_count,
+    store_pretest,
+    get_pretest
 )
 from .textbook_service import extract_toc, parse_and_chunk, pdf_page_range
 from .vector_service import upsert_chunks
+from .llm_service import LLMService
+from .question_prompts import QUESTION_TYPES, MC_BASE_PROMPT, FLASHCARD_PROMPT, SUMMARY_PROMPT, PRETEST_BATCH_PROMPT

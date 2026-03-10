@@ -10,10 +10,11 @@ from docling.document_converter import DocumentConverter, PdfFormatOption
 from docling_core.transforms.chunker.tokenizer.openai import OpenAITokenizer
 
 
-smolvlm_picture_description = PictureDescriptionVlmOptions(
-    repo_id="HuggingFaceTB/SmolVLM-256M-Instruct",
-    prompt="Describe this image in the context of a textbook. Focus on any data, labels, or concepts shown."
-)
+# Removed this as it is bottleneckign uplaod, could be added again later
+# smolvlm_picture_description = PictureDescriptionVlmOptions(
+#     repo_id="HuggingFaceTB/SmolVLM-256M-Instruct",
+#     prompt="Describe this image in the context of a textbook. Focus on any data, labels, or concepts shown."
+# )
 
 # pipeline_options = PdfPipelineOptions(
 #     generate_page_images=True,
@@ -28,12 +29,11 @@ smolvlm_picture_description = PictureDescriptionVlmOptions(
 
 pipeline_options = PdfPipelineOptions(
     generate_page_images=False,
-    generate_picture_images=True,
+    generate_picture_images=False,
     images_scale=0.5,
     do_ocr=False,
     do_table_structure=False,
-    do_picture_description=True,
-    picture_description_options=smolvlm_picture_description
+    do_picture_description=False
 )
 
 converter = DocumentConverter(
@@ -191,16 +191,16 @@ def parse_and_chunk(file_bytes: bytes, user_id: str, textbook_id: str, toc: list
             })
             chunk_index += 1
 
-        print("chunks:", len(chunks), "chunks_missing_pages:", no_page)
-        ps = [c["page_start"] for c in chunks if c["page_start"] is not None]
-        if ps:
-            print("page_start min/max:", min(ps), max(ps))
-        lens = [len(c["text"]) for c in chunks if c.get("text")]
-        if lens:
-            print("avg_chars:", sum(lens)/len(lens), "min_chars:", min(lens), "max_chars:", max(lens))
-        if chunks:
-            print("sample chunk 0:", chunks[0]["citation"], chunks[0]["text"][:300])
-            print("sample chunk -1:", chunks[-1]["citation"], chunks[-1]["text"][:300])
+        # print("chunks:", len(chunks), "chunks_missing_pages:", no_page)
+        # ps = [c["page_start"] for c in chunks if c["page_start"] is not None]
+        # if ps:
+        #     print("page_start min/max:", min(ps), max(ps))
+        # lens = [len(c["text"]) for c in chunks if c.get("text")]
+        # if lens:
+        #     print("avg_chars:", sum(lens)/len(lens), "min_chars:", min(lens), "max_chars:", max(lens))
+        # if chunks:
+        #     print("sample chunk 0:", chunks[0]["citation"], chunks[0]["text"][:300])
+        #     print("sample chunk -1:", chunks[-1]["citation"], chunks[-1]["text"][:300])
 
         return chunks
 
