@@ -14,7 +14,10 @@ def create_app():
     # Configuration
     app.config["SECRET_KEY"] = settings.SECRET_KEY
     app.config["JWT_SECRET_KEY"] = os.environ.get("JWT_SECRET_KEY")
-    app.config["CELERY"] = {"broker_url": "redis://localhost:6379", "result_backend": "redis://localhost:6379"}
+    app.config["CELERY"] = {
+        "broker_url": os.environ.get("REDIS_URL", "redis://localhost:6379"), 
+        "result_backend": os.environ.get("REDIS_URL", "redis://localhost:6379")
+    }
 
     init_supabase()
     init_qdrant()

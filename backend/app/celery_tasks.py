@@ -1,5 +1,6 @@
 from celery import shared_task
 
 @shared_task
-def process_textbook():
+def ingest_task():
+    #TODO: move process_textbook here?
     print("Processing textbook")
