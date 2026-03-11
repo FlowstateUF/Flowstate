@@ -76,26 +76,104 @@ def extract_toc(file: bytes) -> tuple[list[dict], int]:
     if not toc:
         return [{"title": "Full Textbook", "start_page": 1, "end_page": total_pages}], total_pages
 
+    # Regex that checks for any chapter like "Concluding Remarks"
+    CHAPTER_NUMBER_REGEX = re.compile(r"^\s*\d+(\.\d+)*\s+")
+    END_REGEX = re.compile(
+        r"""(?i)(
+            conclusion|
+            concluding(\s+remarks)?|
+            final\s+(summary|remarks|thoughts)|
+            summary|
+            synthesis|
+            wrap[-\s]?up|
+            review\s+and\s+outlook|
+            putting\s+it\s+all\s+together|
+            capstone|
+            integrat(ing|ion)|
+            comprehensive\s+(review|summary)|
+            case\s+studies?|
+            applications?|
+            advanced\s+applications?|
+            review|
+            practice\s+problems?|
+            test\s+yourself|
+            exam\s+preparation|
+            self[-\s]?assessment|
+            appendix(\s+[a-z])?|
+            appendices|
+            math(ematical)?\s+background|
+            math\s+review|
+            algebra\s+review|
+            calculus\s+review|
+            technical\s+background|
+            derivations?|
+            data\s+tables?|
+            statistical\s+tables?|
+            conversion\s+tables?|
+            additional\s+figures?|
+            supplementary\s+data|
+            worked\s+examples?|
+            selected\s+solutions?|
+            solutions?\s+to|
+            additional\s+exercises?|
+            glossary|
+            index|
+            list\s+of\s+symbols|
+            list\s+of\s+abbreviations|
+            notation\s+guide
+        )""",
+        re.VERBOSE
+    )
+
+    # Check if level 1 entries are chapters, and then level 2
+    # Check second entry to be sure
+    level_toc = [item for item in toc if item[0] == 1]
+
+    if not re.match(r"^\d+", level_toc[1][1]):
+        level_toc = [item for item in toc if item[0] == 2]
+
     chapters = []
-    for i, (level, title, start_page) in enumerate(toc):
-        # if i + 1 < len(toc):
-        #     end_page = toc[i + 1][2] - 1
-        # else:
-        #     end_page = total_pages
-        end_page = total_pages
-        for j in range(i + 1, len(toc)):
-            next_level, _, next_start = toc[j]
-            if next_level <= level:
-                end_page = next_start - 1
-                break 
-            # ANNACHEN
-        end_page = max(start_page, end_page)
+
+    for i, (_, title, start_page) in enumerate(level_toc):
+
+        # Skip if chapter doesn't start with a number
+        if not re.match(r"^\d+", title):
+            continue
+
+        normalized_title = CHAPTER_NUMBER_REGEX.sub("", title).strip()
+        if bool(END_REGEX.search(normalized_title)):
+            continue
+
+        if i == len(level_toc) - 1:
+            end_page = total_pages
+        else:
+            end_page = level_toc[i + 1][2] - 1
 
         chapters.append({
             "title": title,
             "start_page": start_page,
             "end_page": end_page
         })
+
+    # for i, (level, title, start_page) in enumerate(toc):
+    #     # if i + 1 < len(toc):
+    #     #     end_page = toc[i + 1][2] - 1
+    #     # else:
+    #     #     end_page = total_pages
+    #     end_page = total_pages
+    #     for j in range(i + 1, len(toc)):
+    #         next_level, _, next_start = toc[j]
+    #         if next_level <= level:
+    #             end_page = next_start - 1
+    #             break 
+    #         # ANNACHEN
+    #     end_page = max(start_page, end_page)
+
+    #     chapters.append({
+    #         "title": title,
+    #         "start_page": start_page,
+    #         "end_page": end_page
+    #     })
 
     return chapters, total_pages
 
