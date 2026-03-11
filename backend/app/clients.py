@@ -1,6 +1,6 @@
 from supabase import create_client, Client
 from qdrant_client import QdrantClient
-from qdrant_client.models import VectorParams, Distance
+from qdrant_client.models import Distance, VectorParams
 from sympy import public
 from app.config import settings
 

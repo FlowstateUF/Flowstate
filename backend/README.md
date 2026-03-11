@@ -8,44 +8,60 @@ This is the backend code for Flowstate, utilizing Flask.
  - add secrets to .env
     - create a file called '.env' in the backend folder
     - generate a personal Navigator API key (Navigator Toolkit online) using gpt-oss-20b model
-    - Get the Supabase keys Aaron emailed
-    - Define the keys in the .env folder
+    - Get other keys from email
+    - check .env.example
 
 ## Guide
 - run run.py
 - then start the React app in the frontend
 
 ## Files
+
+### backend/
 - run.py: only file that needs to be run, creates an app using init.py
     - this file never really needs to be modified
 
-- app/init.py: this creates the flask app, and uses the db and routes
+- make_celery.py: celery worker
+
+### backend/app/
+
+- __init__.py: this creates the flask app, and uses the db and routes
     - various config and extensions could be added here down the line
 
-- app/routes.py: this is where HTTP routes can be written, rather than writing them all in init.py
+- celery_app.py: this create the celery app
+
+- celery_tasks.py: this is where the celery tasks will be maybe
+
+- clients.py: this is where clients are initialized
+    - supabase, qdrant
+
+- config.py: this is where our Setting class is defined
+    - allows us to use secrets
+
+- processing.py: this is where the textbook processing pipeline is
+
+- routes.py: this is where HTTP routes can be written, rather than writing them all in init.py
     - this is where additional website routes will be added to handle various requests
 
-- app/clients.py: this is where clients are initialized
-    - supabase, qdrant, navigator(?)
+### backend/app/services/
 
-- app/processing.py: this is where the textbook processing pipeline is
+- embedding_service.py: creates embeddings using sentence_transformers library
+    - uses all-MiniLM-L6-v2 model
 
-- app/services/init.py: this allows for services to be seen as a package
-    - imports service functions for easy external imports
+- llm_service.py: this is where all llm generation operations are
 
-- app/services/textbook_service.py: this is where all textbook-related operations are written
-    - textbook parsing, chunking, embeddings, vectors
+- question_prompts.py: this file is where system prompts are stored
 
-- app/services/supabase_service.py: this is where all supabase storage and database operations are written
+- supabase_service.py: this is where all supabase storage and database operations are
     - user creation, authentication
     - upload textbook to supabase storage and database
 
-- app/services/generation_service.py: this is where all study tools will be created/written
-    - Create questions, flashcards, quizes, and more
+- textbook_service.py: this is where all textbook-related operations are
+    - textbook parsing, chunking, embeddings, vectors
+
+- vector_service.py: this is where all vector/qdrant-related operations are
 
 ## Notes
-- Using threading for processing document
-    - In the future can use Celery Redis
 - Can think about using Supabase Auth
 - Can improve image embeddings
 

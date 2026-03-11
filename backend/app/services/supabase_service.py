@@ -1,6 +1,7 @@
 from app.clients import supabase
 from werkzeug.security import generate_password_hash, check_password_hash
 
+
 # Users #
 
 def create_user(username, password, email) -> dict:
@@ -91,6 +92,28 @@ def delete_textbook(textbook_id: str):
     supabase.storage.from_("textbooks").remove(textbook_path)
     supabase.table("textbooks").delete().eq("id", textbook_id).execute()
 
+def get_textbook(user_id: str, textbook_id: str):
+    res = (
+        supabase.table("textbooks")
+        .select("id")
+        .eq("id", textbook_id)
+        .eq("user_id", user_id)
+        .limit(1)
+        .execute()
+    )
+    return res
+
+def check_textbook_exists(user_id: str, filename: str):
+    res = (
+        supabase.table("textbooks")
+        .select("id, status")
+        .eq("user_id", user_id)
+        .eq("title", filename)
+        .limit(1)
+        .execute()
+    )
+    return res
+
 
 # Chapters #
 
@@ -118,7 +141,6 @@ def get_textbook_page_count(textbook_id: str) -> int | None:
         return None
     return res.data.get("page_count")
 
-
 def store_pretest(textbook_id: str, chapter_id: str, chapter_title: str, questions: list[dict]):
     supabase.table("pretests").insert({
         "textbook_id": textbook_id,
@@ -138,3 +160,31 @@ def get_pretest(textbook_id: str, chapter_id: str) -> dict | None:
         .execute()
     )
     return result.data
+
+def fetch_chapter_chunks(textbook_id: str, chapter_id: str, limit: int = 60) -> list[dict]:
+    # Pull the first N chunks in that chapter (ordered)
+    res = (
+        supabase.table("chunks")
+        .select("id, page_number, rindex, content")
+        .eq("textbook_id", textbook_id)
+        .eq("chapter_id", chapter_id)
+        .order("page_number")
+        .order("rindex")
+        .limit(limit)
+        .execute()
+    )
+    return res.data or []
+
+
+# Pretests #
+
+def check_pretest_exists(textbook_id: str, chapter_id: str) -> bool:
+    res = (
+        supabase.table("pretests")
+        .select("id")
+        .eq("textbook_id", textbook_id)
+        .eq("chapter_id", chapter_id)
+        .limit(1)
+        .execute()
+    )
+    return bool(res.data)

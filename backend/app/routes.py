@@ -1,83 +1,34 @@
-import traceback
-import threading, time, traceback
+import re, time, traceback
 from flask import request, jsonify
 from openai import OpenAI
-from app.services import create_user, authenticate_user, check_username_exists, check_email_exists, get_user_by_id, upload_textbook_to_supabase, extract_toc, store_toc, LLMService, QUESTION_TYPES, MC_BASE_PROMPT, FLASHCARD_PROMPT, SUMMARY_PROMPT
+from app.services.llm_service import LLMService
+from app.services.question_prompts import (
+    QUESTION_TYPES, 
+    MC_BASE_PROMPT, 
+    FLASHCARD_PROMPT, 
+    SUMMARY_PROMPT
+)
+from app.services.supabase_service import (
+    authenticate_user, 
+    check_email_exists, 
+    check_textbook_exists,
+    check_username_exists, 
+    create_user, 
+    fetch_chapter_chunks,
+    get_textbook,
+    get_user_by_id, 
+    store_toc,
+    upload_textbook_to_supabase
+)
+from app.services.textbook_service import extract_toc
+from app.services.vector_service import (
+    get_collection_info, 
+    retrieve_context
+)
 from app.processing import process_textbook
 from app.config import settings
-import re
 from flask_jwt_extended import create_access_token, jwt_required, get_jwt_identity
-from app.clients import qdrant, supabase
-from app.services import embed_query
 
-from qdrant_client.models import Filter, FieldCondition, MatchValue
-
-def verify_textbook_owner(user_id: str, textbook_id: str) -> bool:
-    res = (
-        supabase.table("textbooks")
-        .select("id")
-        .eq("id", textbook_id)
-        .eq("user_id", user_id)
-        .limit(1)
-        .execute()
-    )
-    return bool(res.data)
-
-
-def retrieve_context(user_id: str, textbook_id: str, query: str, top_k: int = 8) -> str:
-    qvec = embed_query(query)
-
-    flt = Filter(
-        must=[
-            FieldCondition(key="user_id", match=MatchValue(value=str(user_id))),
-            FieldCondition(key="textbook_id", match=MatchValue(value=str(textbook_id))),
-        ]
-    )
-
-    res = qdrant.query_points(
-        collection_name="chunks",
-        query=qvec,
-        using="dense",
-        query_filter=flt,
-        limit=top_k,
-        with_payload=True,
-    )
-
-    hits = res.points or []
-    if not hits:
-        return ""
-
-    parts = []
-    for p in hits:
-        payload = p.payload or {}
-        text = (payload.get("text") or payload.get("content") or "").strip()
-        if not text:
-            continue
-
-        citation = payload.get("citation")
-        if not citation:
-            ps = payload.get("page_start") or payload.get("page_number")
-            pe = payload.get("page_end")
-            if ps is not None:
-                citation = f"Page {ps}" if pe in (None, ps) else f"Pages {ps}-{pe}"
-
-        parts.append(f"{citation}: {text}" if citation else text)
-
-    return "\n\n".join(parts)
-
-def _fetch_chapter_chunks(textbook_id: str, chapter_id: str, limit: int = 60) -> list[dict]:
-    # Pull the first N chunks in that chapter (ordered)
-    res = (
-        supabase.table("chunks")
-        .select("id, page_number, rindex, content")
-        .eq("textbook_id", textbook_id)
-        .eq("chapter_id", chapter_id)
-        .order("page_number")
-        .order("rindex")
-        .limit(limit)
-        .execute()
-    )
-    return res.data or []
 
 def _build_context_from_chunks(rows: list[dict], max_chars: int = 12000) -> str:
     parts = []
@@ -94,6 +45,7 @@ def _build_context_from_chunks(rows: list[dict], max_chars: int = 12000) -> str:
         parts.append(snippet)
         total += len(snippet)
     return "\n\n".join(parts)
+
 
 # ** Where HTTP routes are written **
 # register_routes is called in init.py, giving it access to all the routes below 
@@ -203,14 +155,7 @@ def register_routes(app):
             file_bytes = file.read()
 
             # Check if this user already uploaded this file
-            existing = (
-                supabase.table("textbooks")
-                .select("id, status")
-                .eq("user_id", user_id)
-                .eq("title", file.filename)
-                .limit(1)
-                .execute()
-            )
+            existing = check_textbook_exists(user_id, file.filename)
 
             if existing.data:
                 existing_id = existing.data[0]["id"]
@@ -247,7 +192,7 @@ def register_routes(app):
             # TODO: Add celery functionality
             # CELERY: replace with ingest_task.delay(user_id, textbook_id, file_b64)
             # and return 202 immediately instead of waiting
-            process_textbook(user_id, textbook_id, file_bytes)
+            process_textbook.delay(user_id, textbook_id, file_bytes)
 
         except Exception as e:
             return jsonify({"error": "Failed to process textbook", "details": str(e)}), 500
@@ -258,7 +203,7 @@ def register_routes(app):
             "textbook_id": textbook['id'],
             "filename": textbook['title'],
             "storage_path": textbook['storage_path']
-        }), 200
+        }), 202
 
    
     # ** NaviGator Routes **
@@ -306,7 +251,7 @@ def register_routes(app):
         if not textbook_id:
             return jsonify({"error": "textbook_id required"}), 400
 
-        if not verify_textbook_owner(user_id, textbook_id):
+        if not get_textbook(user_id, textbook_id).data:
             return jsonify({"error": "Textbook not found or unauthorized"}), 404
 
         retrieval_query = topic if topic else "main ideas key terms"
@@ -335,18 +280,11 @@ def register_routes(app):
             return jsonify({"error": "textbook_id and chapter_id required"}), 400
 
         # ownership check like your other routes
-        owned = (
-            supabase.table("textbooks")
-            .select("id")
-            .eq("id", textbook_id)
-            .eq("user_id", user_id)
-            .limit(1)
-            .execute()
-        )
+        owned = get_textbook(user_id, textbook_id)
         if not owned.data:
             return jsonify({"error": "Textbook not found or unauthorized"}), 404
 
-        rows = _fetch_chapter_chunks(textbook_id, chapter_id, limit=80)
+        rows = fetch_chapter_chunks(textbook_id, chapter_id, limit=80)
         if not rows:
             return jsonify({"error": "No chunks found for that chapter_id"}), 400
 
@@ -367,5 +305,5 @@ def register_routes(app):
 
     @app.get("/api/debug/qdrant-vectors")
     def debug_qdrant_vectors():
-        info = qdrant.get_collection("chunks")
+        info = get_collection_info("chunks")
         return jsonify(str(info.config.params.vectors))
