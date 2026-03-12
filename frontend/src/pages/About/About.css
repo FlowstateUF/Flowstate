@@ -1,0 +1,77 @@
+/* Hero section (Mailchimp-ish) */
+.about-hero {
+  background: #cfe0f3; /* soft blue band */
+  padding: 64px 0;
+}
+
+.about-hero-inner {
+  max-width: 1100px;
+  margin: 0 auto;
+  padding: 0 28px;
+
+  display: grid;
+  grid-template-columns: 1fr 1.2fr;
+  gap: 48px;
+  align-items: center;
+}
+
+.about-hero-title {
+  font-family: Georgia, "Times New Roman", Times, serif;
+  font-size: clamp(44px, 5vw, 64px);
+  font-weight: 700;
+  letter-spacing: -0.02em;
+  margin: 0;
+  color: #1f2937;
+}
+
+.about-hero-imageWrap {
+  background: #ffffff;
+  border: 2px solid rgba(31, 41, 55, 0.2);
+  border-radius: 8px;
+  padding: 10px;
+}
+
+.about-hero-image {
+  width: 100%;
+  height: auto;
+  display: block;
+  border-radius: 6px;
+}
+
+/* Body section */
+.about-body {
+  background: #ffffff;
+  padding: 56px 0 72px;
+}
+
+.about-body-inner {
+  max-width: 920px;
+  margin: 0 auto;
+  padding: 0 28px;
+}
+
+.about-paragraph {
+  font-family: Georgia, "Times New Roman", Times, serif;
+  font-size: 20px;
+  line-height: 1.75;
+  color: #111827;
+  margin: 0;
+}
+
+/* Drop cap like the example */
+.about-paragraph::first-letter {
+  float: left;
+  font-size: 76px;
+  line-height: 0.9;
+  padding-right: 12px;
+  padding-top: 10px;
+  font-weight: 700;
+  color: #111827;
+}
+
+/* Responsive: stack title above image */
+@media (max-width: 900px) {
+  .about-hero-inner {
+    grid-template-columns: 1fr;
+  }
+}
