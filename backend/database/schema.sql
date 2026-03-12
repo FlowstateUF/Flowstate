@@ -61,3 +61,16 @@ create table public.chapters (
   constraint chapters_pkey primary key (id),
   constraint chapters_textbook_id_fkey foreign KEY (textbook_id) references textbooks (id) on delete CASCADE
 ) TABLESPACE pg_default;
+
+create table public.pretests (
+  id uuid not null default gen_random_uuid(),
+  textbook_id uuid null,
+  chapter_id uuid null,
+  chapter_title text not null,
+  questions jsonb not null,
+  status text null default 'ready',
+  created_at timestamp null default now(),
+  constraint pretests_pkey primary key (id),
+  constraint pretests_textbook_id_fkey foreign key (textbook_id) references textbooks (id) on delete cascade,
+  constraint pretests_chapter_id_fkey foreign key (chapter_id) references chapters (id) on delete cascade
+) TABLESPACE pg_default;

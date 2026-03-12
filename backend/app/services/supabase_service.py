@@ -1,6 +1,7 @@
 from app.clients import supabase
 from werkzeug.security import generate_password_hash, check_password_hash
 
+
 # Users #
 
 def create_user(username, password, email) -> dict:
@@ -16,6 +17,10 @@ def create_user(username, password, email) -> dict:
 
 def authenticate_user(email, password) -> dict:
     response = supabase.table('users').select('*').eq('email', email).execute()
+
+    if not response.data:  
+        return {"error": "Invalid email or password"}
+    
     user = response.data[0]
 
     if user and check_password_hash(user['password'], password):
@@ -34,13 +39,20 @@ def check_email_exists(email) -> bool:
     return len(response.data) > 0
 
 def get_user_by_id(user_id) -> dict:
-    return supabase.table('users').select('*').eq('id', user_id).execute().data[0]
+    result = supabase.table('users').select('*').eq('id', user_id).execute()
+    if not result.data:
+        return {"error": "User not found"}
+    return result.data[0]
 
 
-# Textbooks #
-
+# Textbooks 
 def upload_textbook_to_supabase(user_id: int, file_bytes: bytes, filename: str) -> dict:
     storage_path = f"{user_id}/{filename}"
+
+    try:
+        supabase.storage.from_('textbooks').remove([storage_path])
+    except Exception:
+        pass
 
     supabase.storage.from_('textbooks').upload(
         path=storage_path,
@@ -80,6 +92,28 @@ def delete_textbook(textbook_id: str):
     supabase.storage.from_("textbooks").remove(textbook_path)
     supabase.table("textbooks").delete().eq("id", textbook_id).execute()
 
+def get_textbook(user_id: str, textbook_id: str):
+    res = (
+        supabase.table("textbooks")
+        .select("id")
+        .eq("id", textbook_id)
+        .eq("user_id", user_id)
+        .limit(1)
+        .execute()
+    )
+    return res
+
+def check_textbook_exists(user_id: str, filename: str):
+    res = (
+        supabase.table("textbooks")
+        .select("id, status")
+        .eq("user_id", user_id)
+        .eq("title", filename)
+        .limit(1)
+        .execute()
+    )
+    return res
+
 
 # Chapters #
 
@@ -101,3 +135,56 @@ def get_toc(textbook_id: str) -> list[dict]:
     result = supabase.table("chapters").select("*").eq("textbook_id", textbook_id).order("start_page").execute()
     return result.data
 
+def get_textbook_page_count(textbook_id: str) -> int | None:
+    res = supabase.table("textbooks").select("page_count").eq("id", textbook_id).single().execute()
+    if not res.data:
+        return None
+    return res.data.get("page_count")
+
+def store_pretest(textbook_id: str, chapter_id: str, chapter_title: str, questions: list[dict]):
+    supabase.table("pretests").insert({
+        "textbook_id": textbook_id,
+        "chapter_id": chapter_id,
+        "chapter_title": chapter_title,
+        "questions": questions,
+        "status": "ready",
+    }).execute()
+
+def get_pretest(textbook_id: str, chapter_id: str) -> dict | None:
+    result = (
+        supabase.table("pretests")
+        .select("*")
+        .eq("textbook_id", textbook_id)
+        .eq("chapter_id", chapter_id)
+        .single()
+        .execute()
+    )
+    return result.data
+
+def fetch_chapter_chunks(textbook_id: str, chapter_id: str, limit: int = 60) -> list[dict]:
+    # Pull the first N chunks in that chapter (ordered)
+    res = (
+        supabase.table("chunks")
+        .select("id, page_number, rindex, content")
+        .eq("textbook_id", textbook_id)
+        .eq("chapter_id", chapter_id)
+        .order("page_number")
+        .order("rindex")
+        .limit(limit)
+        .execute()
+    )
+    return res.data or []
+
+
+# Pretests #
+
+def check_pretest_exists(textbook_id: str, chapter_id: str) -> bool:
+    res = (
+        supabase.table("pretests")
+        .select("id")
+        .eq("textbook_id", textbook_id)
+        .eq("chapter_id", chapter_id)
+        .limit(1)
+        .execute()
+    )
+    return bool(res.data)

@@ -1,6 +1,6 @@
 from supabase import create_client, Client
 from qdrant_client import QdrantClient
-from qdrant_client.models import VectorParams, Distance
+from qdrant_client.models import Distance, VectorParams
 from sympy import public
 from app.config import settings
 
@@ -46,7 +46,13 @@ def init_qdrant():
             }
         )
 
-        qdrant.create_payload_index(collection_name="chunks", field_name="user_id", field_schema="keyword", field_name_in_tenant=True)
+        qdrant.create_payload_index(collection_name="chunks", field_name="user_id", field_schema="keyword")
         qdrant.create_payload_index(collection_name="chunks", field_name="textbook_id", field_schema="keyword")
-        qdrant.create_payload_index(collection_name="chunks", field_name="page", field_schema="integer")
+        qdrant.create_payload_index(collection_name="chunks", field_name="chapter", field_schema="keyword")
+        qdrant.create_payload_index(collection_name="chunks", field_name="page_start", field_schema="integer")
+
+    # Always ensure indexes exist even if collection was created before
+    else:
+        qdrant.create_payload_index(collection_name="chunks", field_name="chapter", field_schema="keyword")
+        qdrant.create_payload_index(collection_name="chunks", field_name="textbook_id", field_schema="keyword")
 
