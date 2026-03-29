@@ -3,7 +3,6 @@ from app.services.embedding_service import embed_query
 from qdrant_client.models import FieldCondition, Filter, MatchValue, PointStruct
 import uuid
 
-
 def get_collection_info(vector: str):
     return qdrant.get_collection(vector)
 
@@ -19,15 +18,20 @@ def upsert_chunks(chunks: list[dict], embeddings: list[list[float]]):
     ]
     qdrant.upsert(collection_name="chunks", points=points)
 
-def retrieve_context(user_id: str, textbook_id: str, query: str, top_k: int = 8) -> str:
+def retrieve_context(user_id: str, textbook_id: str, query: str, top_k: int = 8, chapter_title: str = None) -> str:
     qvec = embed_query(query)
 
-    flt = Filter(
-        must=[
-            FieldCondition(key="user_id", match=MatchValue(value=str(user_id))),
-            FieldCondition(key="textbook_id", match=MatchValue(value=str(textbook_id))),
-        ]
-    )
+    must_filters = [
+        FieldCondition(key="user_id", match=MatchValue(value=str(user_id))),
+        FieldCondition(key="textbook_id", match=MatchValue(value=str(textbook_id))),
+    ]
+    if chapter_title:
+        must_filters.append(
+            FieldCondition(key="chapter", match=MatchValue(value=chapter_title))
+        )
+
+    flt = Filter(must=must_filters)
+    
 
     res = qdrant.query_points(
         collection_name="chunks",

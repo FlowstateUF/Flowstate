@@ -307,3 +307,10 @@ def register_routes(app):
     def debug_qdrant_vectors():
         info = get_collection_info("chunks")
         return jsonify(str(info.config.params.vectors))
+    
+    # Get all the topics for a given chapter
+    @app.get("/api/chapters/<chapter_id>/topics")
+    @jwt_required()
+    def chapter_topics(chapter_id):
+        topics = get_chapter_topics(chapter_id)
+        return jsonify({"topics": topics}), 200
