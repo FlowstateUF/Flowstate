@@ -1,6 +1,6 @@
 import json, re
 from openai import OpenAI
-from .question_prompts import MC_BASE_PROMPT, QUESTION_TYPES, FLASHCARD_PROMPT, SUMMARY_PROMPT, PRETEST_PROMPT, TOPIC_EXTRACTION_PROMPT
+from .question_prompts import MC_BASE_PROMPT, QUESTION_TYPES, FLASHCARD_PROMPT, SUMMARY_PROMPT, PRETEST_PROMPT
 
 # Class that allows us to construct each prompt and recieve output fromt the LLM
 class LLMService:
@@ -138,36 +138,28 @@ class LLMService:
 
         return data
     
-    # Extracts the core topics from a given chapter: helps with question labeling
-    def extract_chapter_topics(self, context, temp=0.2):
-        prompt = TOPIC_EXTRACTION_PROMPT.format(context=context)
+    #STOPPED USING
+    # # Extracts the core topics from a given chapter: helps with question labeling
+    # def extract_chapter_topics(self, context, temp=0.2):
+    #     prompt = TOPIC_EXTRACTION_PROMPT.format(context=context)
 
-        response = self.client.responses.create(
-            model=self.model,
-            input=prompt,
-            temperature=temp
-        )
+    #     response = self.client.responses.create(
+    #         model=self.model,
+    #         input=prompt,
+    #         temperature=temp
+    #     )
 
-        data = self._parse_json(response.output_text)
+    #     data = self._parse_json(response.output_text)
 
-        if "topics" not in data or not isinstance(data["topics"], list):
-            raise ValueError("Response missing 'topics' list")
-        if not (5 <= len(data["topics"]) <= 10):
-            print(f"[topics] warning: got {len(data['topics'])} topics (expected 5-10)")
+    #     if "topics" not in data or not isinstance(data["topics"], list):
+    #         raise ValueError("Response missing 'topics' list")
+    #     if not (5 <= len(data["topics"]) <= 10):
+    #         print(f"[topics] warning: got {len(data['topics'])} topics (expected 5-10)")
 
-        return data["topics"]
+    #     return data["topics"]
     
-    def generate_pretest_from_topics(self, topic_contexts, temp=0.3):
-
-        # Build numbered topic sections so the LLM can match each question to its context
-        topics_block_parts = []
-        for i, t in enumerate(topic_contexts, 1):
-            topics_block_parts.append(
-                f"--- Topic {i}: {t['topic']} ---\n"
-                f"Context:\n{t['context']}"
-            )
-        topics_block = "\n\n".join(topics_block_parts)
-
+    def generate_pretest(self, chapter_title, context, temp=0.3):
+        
         bloom_distribution_str = (
             "- 5 Recall (Bloom's Level 1)\n"
             "- 3 Understand (Bloom's Level 2)\n"
@@ -179,9 +171,10 @@ class LLMService:
         PRETEST_Q_COUNT = 12
 
         prompt = PRETEST_PROMPT.format(
+            chapter_title=chapter_title,
             question_count=PRETEST_Q_COUNT,
             bloom_distribution=bloom_distribution_str,
-            topics_block=topics_block,
+            context=context
         )
 
         response = self.client.responses.create(
@@ -195,14 +188,24 @@ class LLMService:
         if "questions" not in data or not isinstance(data["questions"], list):
             raise ValueError("Response missing 'questions' list")
         
+        # Retry once if count is wrong
+        if len(data["questions"]) != PRETEST_Q_COUNT:
+            print(f"[pretest] got {len(data['questions'])} questions, retrying...")
+            response = self.client.responses.create(
+                model=self.model,
+                input=prompt,
+                temperature=temp
+            )
+            data = self._parse_json(response.output_text)
+        
         if len(data["questions"]) != PRETEST_Q_COUNT:
             raise ValueError(f"Expected {PRETEST_Q_COUNT} questions, got {len(data['questions'])}")
 
-        required = ["type", "topic", "question", "choices", "correct_answer", "explanation", "citation"]
+        required = ["type", "question", "choices", "correct_answer", "explanation", "citation"]
         for i, q in enumerate(data["questions"]):
             missing = [f for f in required if f not in q]
             if missing:
-                raise ValueError(f"Question {i} (topic: {q.get('topic')}) missing fields: {missing}")
+                raise ValueError(f"Question {i} missing fields: {missing}")
         
             valid_types = {"recall", "understand", "apply", "analyze"}
             if q["type"] not in valid_types:

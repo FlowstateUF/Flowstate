@@ -99,7 +99,7 @@ def process_textbook(user_id: str, textbook_id: str, file_bytes: bytes):
 
         update_textbook_status(textbook_id, status, len(all_chunks))
 
-        generate_all_pretests.delay(user_id, textbook_id, toc)
+        generate_all_pretests(user_id, textbook_id, toc)
 
     except Exception as e:
         update_textbook_status(textbook_id, "failed")

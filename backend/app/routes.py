@@ -157,8 +157,8 @@ def register_routes(app):
             # Check if this user already uploaded this file
             existing = check_textbook_exists(user_id, file.filename)
 
-            if existing.data:
-                existing_id = existing.data[0]["id"]
+            if existing:
+                existing_id = existing["id"]
                 print(f"[upload] '{file.filename}' already parsed before, skipping")
 
                 return jsonify({
@@ -188,10 +188,6 @@ def register_routes(app):
             return jsonify({"error": str(e)}), 500
 
         try:
-            
-            # TODO: Add celery functionality
-            # CELERY: replace with ingest_task.delay(user_id, textbook_id, file_b64)
-            # and return 202 immediately instead of waiting
             process_textbook.delay(user_id, textbook_id, file_bytes)
 
         except Exception as e:
@@ -204,6 +200,25 @@ def register_routes(app):
             "filename": textbook['title'],
             "storage_path": textbook['storage_path']
         }), 202
+    
+    # Get upload progress
+    @app.get("/api/textbooks/<textbook_id>/status")
+    @jwt_required()
+    def get_textbook_status(textbook_id):
+        user_id = get_jwt_identity()
+        if not get_textbook(user_id, textbook_id).data:
+            return jsonify({"error": "Not found"}), 404
+
+        info = get_textbook_info(textbook_id)
+        toc = get_toc(textbook_id)
+        pretests_ready = sum(
+            1 for ch in toc if check_pretest_exists(textbook_id, ch["id"])
+        )
+        return jsonify({
+            "status": info["status"],
+            "chapter_count": len(toc),
+            "pretests_ready": pretests_ready,
+        }), 200
 
    
     # ** NaviGator Routes **
@@ -308,9 +323,3 @@ def register_routes(app):
         info = get_collection_info("chunks")
         return jsonify(str(info.config.params.vectors))
     
-    # Get all the topics for a given chapter
-    @app.get("/api/chapters/<chapter_id>/topics")
-    @jwt_required()
-    def chapter_topics(chapter_id):
-        topics = get_chapter_topics(chapter_id)
-        return jsonify({"topics": topics}), 200

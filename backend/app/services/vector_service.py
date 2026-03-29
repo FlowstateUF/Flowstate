@@ -64,11 +64,12 @@ def retrieve_context(user_id: str, textbook_id: str, query: str, top_k: int = 8,
 
     return "\n\n".join(parts)
 
-def fetch_all_chunks(textbook_id: str, chapter_title: str) -> list[dict]:
+def fetch_all_chunks(textbook_id: str, chapter_title: str, user_id: str) -> list[dict]:
     # Filter to only this chapter's chunks
     flt = Filter(must=[
+        FieldCondition(key="user_id", match=MatchValue(value=str(user_id))),
         FieldCondition(key="textbook_id", match=MatchValue(value=str(textbook_id))),
-        FieldCondition(key="chapter", match=MatchValue(value=chapter_title)),
+        FieldCondition(key="chapter", match=MatchValue(value=chapter_title))
     ])
 
     all_results = []

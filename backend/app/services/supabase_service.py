@@ -108,12 +108,12 @@ def check_textbook_exists(user_id: str, filename: str):
     res = (
         supabase.table("textbooks")
         .select("id, status")
-        .eq("user_id", user_id)
+        .eq("user_id", user_id)  # ← make sure this is there
         .eq("title", filename)
         .limit(1)
         .execute()
     )
-    return res
+    return res.data[0] if res.data else None
 
 
 # Chapters 

@@ -231,74 +231,82 @@ Return ONLY valid JSON in this exact format:
 }}
 """
 
-TOPIC_EXTRACTION_PROMPT = """You are an educational expert analyzing a textbook chapter.
 
-Identify the core topics covered in this chapter.
-These labels will be used to generate quiz questions and track student performance over time,
-so they must be specific, consistent, and meaningful.
+# STOPPED USING this - it was super flaky and generating stupid topics
+# TOPIC_EXTRACTION_PROMPT = """You are an educational expert analyzing a textbook chapter.
 
-RULES:
-- Identify between 5 and 10 topics depending on the breadth of the chapter
-- These topics should be the CORE concepts identified from the chapter
-- Each label must be 2-5 words, specific enough to be unambiguous
-  (e.g. "Binary search trees" not "Trees"; "Memory allocation strategies" not "Memory")
-- Topics must be spread across the ENTIRE chapter — not clustered at the start
-- Topics must be distinct — no overlap between labels
-- Base labels ONLY on the provided context
-- ASCII ONLY
+# Identify the core topics covered in this chapter.
+# These labels will be used to generate quiz questions and track student performance over time,
+# so they must be specific, consistent, and meaningful.
 
-Context:
-{context}
+# RULES:
+# - Identify between 5 and 10 topics depending on the breadth of the chapter
+# - These topics should be the CORE concepts identified from the chapter
+# - If there are headers that indicate topics, utilize them
+# - Each label must be 2-5 words, specific enough to be unambiguous
+#   (e.g. "Binary search trees" not "Trees"; "Memory allocation strategies" not "Memory")
+# - Topics must be spread across the ENTIRE chapter — not clustered at the start
+# - Topics must be distinct — no overlap between labels
+# - ASCII ONLY
 
-Return ONLY valid JSON:
-{{
-  "topics": [
-    {{
-      "label": "Topic label (2-5 words)"
-    }}
-  ]
-}}
-"""
+# Context:
+# {context}
+
+# Return ONLY valid JSON:
+# {{
+#   "topics": [
+#     {{
+#       "label": "Topic label (2-5 words)"
+#     }}
+#   ]
+# }}
+# """
 
 
-PRETEST_PROMPT = """You are an educational assessment expert generating a pretest for a textbook chapter.
+PRETEST_PROMPT = """You are an educational assessment expert generating a holistic pretest for a textbook chapter.
 
-You have been given the core topics for this chapter and relevant context for each.
-Generate exactly {question_count} multiple choice questions total.
+Generate EXACTLY {question_count} multiple choice questions total.
 
 CRITICAL RULES:
-- Use ONLY the provided topic contexts
+- Use ONLY the provided chapter ontext
 - Do NOT make up information or use outside knowledge
 - Every question must cite the specific page(s) from its topic context
 - Use ASCII only
-- The "type" field for each question must be exactly one of: recall, understand, apply, analyze
+- The "type" field for each question must be exactly one of: recall, understand, apply, analyze (Bloom's Taxonomy)
 
 COVERAGE RULES:
-- Every topic listed must appear in at least one question
-- No two questions may test the exact same concept or fact
+- Ensure the questions are distinct, don't test the exact same thing numerous times
+- Cover the full chapter, focusing on core concepts, not minor details
 - Distribute questions across topics based on importance — major topics may have more than one question
-- Focus on core concepts, not edge cases or minor details
+- Test actual CHAPTER content, not textbook metadata or irrelevant data
+- If context appears to come after a different chapter header than the one provided, ignore it
 
-BLOOM DISTRIBUTION (apply across all {question_count} questions):
+BLOOM DISTRIBUTION (apply across all {question_count} questions, quantity of each type matters, not order):
 {bloom_distribution}
 
 QUESTION STRUCTURE (all questions):
-- Exactly 4 choices labeled A, B, C, D
-- Only one correct answer
+- Exactly 4 choices labeled A, B, C, D, only ONE is correct
+- Vary correct answer positions (not all same letter)
+- Choices should be in similiar length and structure
 - All choices similar in length and grammatical structure
 - No "All of the above" or "None of the above"
 - No absolute cues ("always", "never") unless in context
 - Each question must be fully self-contained and understandable on its own
+- Do NOT reference figures, diagrams or any visual element, unless a textual example is provided in the question.
+- Distribute Bloom's levels across different parts/topics of the chapter
 
-TOPICS AND CONTEXTS:
-{topics_block}
+Chapter Title:
+{chapter_title}
 
+CHAPTER CONTEXTS/CONTENT:
+{context}
+
+You MUST adhere to the rules provided at the beginning of the prompt.
 Return ONLY valid JSON. Use ASCII only:
 {{
   "questions": [
     {{
       "type": "recall",
-      "topic": "<topic label from the list above>",
       "question": "Question text",
       "choices": {{
         "A": "First option",
