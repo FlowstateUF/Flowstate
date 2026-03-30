@@ -10,6 +10,7 @@ services:
       - backend
 
   backend:
+    image: flowstate-backend
     build: ./backend
     ports:
       - "5001:5001"
@@ -18,18 +19,22 @@ services:
       - ./backend:/app
     depends_on:
       - redis
+    environment:
+      - TZ=America/New_York
 
   celery_worker:
-    build: ./backend
+    image: flowstate-backend
     command: celery -A make_celery worker --loglevel=info
     env_file: ./backend/.env
     volumes:
       - ./backend:/app
     depends_on:
       - redis
+    environment:
+      - TZ=America/New_York
 
   redis:
-    image: redis
+    image: redis:alpine
     ports:
       - "6379:6379"
 
@@ -39,3 +44,4 @@ services:
       - "8081:8081"
     environment:
       - REDIS_HOSTS=local:redis:6379
+    profiles: ["debug"]

@@ -231,38 +231,83 @@ Return ONLY valid JSON in this exact format:
 }}
 """
 
-PRETEST_BATCH_PROMPT = """You are an educational assessment expert creating a pretest for a textbook chapter.
+
+# STOPPED USING this - it was super flaky and generating stupid topics
+# TOPIC_EXTRACTION_PROMPT = """You are an educational expert analyzing a textbook chapter.
+
+# Identify the core topics covered in this chapter.
+# These labels will be used to generate quiz questions and track student performance over time,
+# so they must be specific, consistent, and meaningful.
+
+# RULES:
+# - Identify between 5 and 10 topics depending on the breadth of the chapter
+# - These topics should be the CORE concepts identified from the chapter
+# - If there are headers that indicate topics, utilize them
+# - Each label must be 2-5 words, specific enough to be unambiguous
+#   (e.g. "Binary search trees" not "Trees"; "Memory allocation strategies" not "Memory")
+# - Topics must be spread across the ENTIRE chapter — not clustered at the start
+# - Topics must be distinct — no overlap between labels
+# - ASCII ONLY
+
+# Context:
+# {context}
+
+# Return ONLY valid JSON:
+# {{
+#   "topics": [
+#     {{
+#       "label": "Topic label (2-5 words)"
+#     }}
+#   ]
+# }}
+# """
+
+
+PRETEST_PROMPT = """You are an educational assessment expert generating a holistic pretest for a textbook chapter.
+
+Generate EXACTLY {question_count} multiple choice questions total.
 
 CRITICAL RULES:
-- Use ONLY information from the provided context below
+- Use ONLY the provided chapter ontext
 - Do NOT make up information or use outside knowledge
-- Each question must test a DIFFERENT concept — no overlapping topics
-- Cover the most important concepts from the context
-- Each question must be fully self-contained and understandable on its own
+- Every question must cite the specific page(s) from its topic context
+- Use ASCII only
+- The "type" field for each question must be exactly one of: recall, understand, apply, analyze (Bloom's Taxonomy)
 
-QUESTION DISTRIBUTION (10 total):
-- 3 Recall (Bloom's Level 1): test direct facts, definitions, terminology
-- 3 Understand (Bloom's Level 2): test comprehension, paraphrasing, comparison
-- 2 Apply (Bloom's Level 3): include a short scenario, test single concept application  
-- 2 Analyze (Bloom's Level 4): test comparing/contrasting multiple concepts
+COVERAGE RULES:
+- Ensure the questions are distinct, don't test the exact same thing numerous times
+- Cover the full chapter, focusing on core concepts, not minor details
+- Distribute questions across topics based on importance — major topics may have more than one question
+- Test actual CHAPTER content, not textbook metadata or irrelevant data
+- If context appears to come after a different chapter header than the one provided, ignore it
 
-QUESTION STRUCTURE RULES (apply to all):
-- Exactly 4 choices labeled A, B, C, D
-- Only one correct answer
+BLOOM DISTRIBUTION (apply across all {question_count} questions, quantity of each type matters, not order):
+{bloom_distribution}
+
+QUESTION STRUCTURE (all questions):
+- Exactly 4 choices labeled A, B, C, D, only ONE is correct
+- Vary correct answer positions (not all same letter)
+- Choices should be in similiar length and structure
 - All choices similar in length and grammatical structure
 - No "All of the above" or "None of the above"
 - No absolute cues ("always", "never") unless in context
+- Each question must be fully self-contained and understandable on its own
+- Do NOT reference figures, diagrams or any visual element, unless a textual example is provided in the question.
+- Distribute Bloom's levels across different parts/topics of the chapter
 
-Context:
+Chapter Title:
+{chapter_title}
+
+CHAPTER CONTEXTS/CONTENT:
 {context}
 
-The top-level JSON must contain exactly one key: "questions"
-Return ONLY valid JSON in this exact format for all 10 questions:
+You MUST adhere to the rules provided at the beginning of the prompt.
+Return ONLY valid JSON. Use ASCII only:
 {{
   "questions": [
     {{
       "type": "recall",
-      "question": "Question text here",
+      "question": "Question text",
       "choices": {{
         "A": "First option",
         "B": "Second option",
@@ -270,19 +315,6 @@ Return ONLY valid JSON in this exact format for all 10 questions:
         "D": "Fourth option"
       }},
       "correct_answer": "A",
-      "explanation": "Brief explanation grounded in the context",
-      "citation": "Page X"
-    }},
-    {{
-      "type": "understand",
-      "question": "Question text here",
-      "choices": {{
-        "A": "First option",
-        "B": "Second option",
-        "C": "Third option",
-        "D": "Fourth option"
-      }},
-      "correct_answer": "B",
       "explanation": "Brief explanation grounded in the context",
       "citation": "Page X"
     }}

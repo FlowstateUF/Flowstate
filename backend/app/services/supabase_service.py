@@ -2,7 +2,7 @@ from app.clients import supabase
 from werkzeug.security import generate_password_hash, check_password_hash
 
 
-# Users #
+# Users 
 
 def create_user(username, password, email) -> dict:
     hashed_password = generate_password_hash(password)
@@ -46,6 +46,7 @@ def get_user_by_id(user_id) -> dict:
 
 
 # Textbooks 
+
 def upload_textbook_to_supabase(user_id: int, file_bytes: bytes, filename: str) -> dict:
     storage_path = f"{user_id}/{filename}"
 
@@ -107,15 +108,15 @@ def check_textbook_exists(user_id: str, filename: str):
     res = (
         supabase.table("textbooks")
         .select("id, status")
-        .eq("user_id", user_id)
+        .eq("user_id", user_id)  # ← make sure this is there
         .eq("title", filename)
         .limit(1)
         .execute()
     )
-    return res
+    return res.data[0] if res.data else None
 
 
-# Chapters #
+# Chapters 
 
 def store_toc(textbook_id: str, toc: list[dict], total_pages: int):
     """Store page_count in textbooks table and extracted chapter list in the chapters table."""
@@ -141,6 +142,23 @@ def get_textbook_page_count(textbook_id: str) -> int | None:
         return None
     return res.data.get("page_count")
 
+def fetch_chapter_chunks(textbook_id: str, chapter_id: str, limit: int = 60) -> list[dict]:
+    # Pull the first N chunks in that chapter (ordered)
+    res = (
+        supabase.table("chunks")
+        .select("id, page_number, rindex, content")
+        .eq("textbook_id", textbook_id)
+        .eq("chapter_id", chapter_id)
+        .order("page_number")
+        .order("rindex")
+        .limit(limit)
+        .execute()
+    )
+    return res.data or []
+
+
+# Pretests 
+
 def store_pretest(textbook_id: str, chapter_id: str, chapter_title: str, questions: list[dict]):
     supabase.table("pretests").insert({
         "textbook_id": textbook_id,
@@ -161,23 +179,6 @@ def get_pretest(textbook_id: str, chapter_id: str) -> dict | None:
     )
     return result.data
 
-def fetch_chapter_chunks(textbook_id: str, chapter_id: str, limit: int = 60) -> list[dict]:
-    # Pull the first N chunks in that chapter (ordered)
-    res = (
-        supabase.table("chunks")
-        .select("id, page_number, rindex, content")
-        .eq("textbook_id", textbook_id)
-        .eq("chapter_id", chapter_id)
-        .order("page_number")
-        .order("rindex")
-        .limit(limit)
-        .execute()
-    )
-    return res.data or []
-
-
-# Pretests #
-
 def check_pretest_exists(textbook_id: str, chapter_id: str) -> bool:
     res = (
         supabase.table("pretests")
@@ -188,3 +189,23 @@ def check_pretest_exists(textbook_id: str, chapter_id: str) -> bool:
         .execute()
     )
     return bool(res.data)
+
+# Chapter Topics
+
+def store_chapter_topics(chapter_id: str, topics: list[str]):
+    supabase.table("chapters").update({
+        "topics": topics
+    }).eq("id", chapter_id).execute()
+
+
+def get_chapter_topics(chapter_id: str) -> list[str]:
+    res = (
+        supabase.table("chapters")
+        .select("topics")
+        .eq("id", chapter_id)
+        .single()
+        .execute()
+    )
+    if not res.data:
+        return []
+    return res.data.get("topics") or []
