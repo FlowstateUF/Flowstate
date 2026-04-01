@@ -86,12 +86,7 @@ export default function NavBar({ isAuthed = true }) {
                     Account
                     </Menu.Item>
 
-                    <Menu.Item
-                    leftSection={<IconSettings size={16} />}
-                    onClick={() => navigate("/settings")}
-                    >
-                    Settings
-                    </Menu.Item>
+
 
                     <Menu.Divider />
 
