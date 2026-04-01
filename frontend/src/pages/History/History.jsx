@@ -17,9 +17,11 @@ import {
 import NavBar from "../../components/NavBar";
 import { authFetch } from "../../utils/authFetch";
 import "./History.css";
+import { IconX, IconPhotoUp } from "@tabler/icons-react";
 
 const API_BASE = "http://localhost:5001";
 const PENDING_STORAGE_KEY = "pendingTextbooks";
+const CUSTOM_COVERS_STORAGE_KEY = "customTextbookCovers";
 const POLL_INTERVAL_MS = 2500;
 const COMPLETE_CARD_HOLD_MS = 1600;
 
@@ -104,11 +106,7 @@ function normalizeTextbook(raw, { previous = {}, pending = {} } = {}) {
       pending.stageLabel ||
       previous.stageLabel ||
       "",
-    detail:
-      raw.detail ||
-      pending.detail ||
-      previous.detail ||
-      "",
+    detail: raw.detail || pending.detail || previous.detail || "",
     chapterCount:
       raw.chapter_count ??
       raw.chapterCount ??
@@ -151,10 +149,7 @@ function buildPendingOnlyTextbook(pending, previous = {}) {
       pending.stageLabel ||
       previous.stageLabel ||
       "",
-    detail:
-      pending.detail ||
-      previous.detail ||
-      "",
+    detail: pending.detail || previous.detail || "",
     chapterCount: previous.chapterCount || 0,
     pretestsReady: previous.pretestsReady || 0,
     createdAt: pending.startedAt || previous.createdAt || Date.now(),
@@ -262,8 +257,113 @@ export default function History() {
   const [pageError, setPageError] = useState("");
   const [toast, setToast] = useState(null);
   const [recentlyCompleted, setRecentlyCompleted] = useState({});
+  const [customCovers, setCustomCovers] = useState(() => {
+    try {
+      return JSON.parse(localStorage.getItem(CUSTOM_COVERS_STORAGE_KEY) || "{}");
+    } catch {
+      return {};
+    }
+  });
 
   const completionTimersRef = useRef({});
+
+  const MAX_FILE_SIZE_MB = 5;
+const MAX_WIDTH = 3000;
+const MAX_HEIGHT = 3000;
+const MAX_ASPECT_RATIO = 2.4; // blocks extremely horizontal or vertical images
+
+const handleCoverUpload = (bookId, file) => {
+  if (!file) return;
+
+  if (!file.type.startsWith("image/")) {
+    setToast({
+      color: "red",
+      title: "Invalid image",
+      message: "Please upload a valid image file.",
+    });
+    return;
+  }
+
+  const maxBytes = MAX_FILE_SIZE_MB * 1024 * 1024;
+
+  if (file.size > maxBytes) {
+    setToast({
+      color: "red",
+      title: "Image too large",
+      message: `Please choose an image under ${MAX_FILE_SIZE_MB}MB.`,
+    });
+    return;
+  }
+
+  const objectUrl = URL.createObjectURL(file);
+  const img = new Image();
+
+  img.onload = () => {
+    const { width, height } = img;
+    const aspectRatio = width / height;
+
+    const tooWideOrTall =
+      width > MAX_WIDTH ||
+      height > MAX_HEIGHT ||
+      aspectRatio > MAX_ASPECT_RATIO ||
+      aspectRatio < 1 / MAX_ASPECT_RATIO;
+
+    if (tooWideOrTall) {
+      URL.revokeObjectURL(objectUrl);
+      setToast({
+        color: "red",
+        title: "Unsupported image",
+        message:
+          "That image is too large or the shape is not supported. Please use a smaller, more standard image.",
+      });
+      return;
+    }
+
+    const reader = new FileReader();
+
+    reader.onloadend = () => {
+      const imageUrl = reader.result;
+
+
+      if (typeof imageUrl === "string" && imageUrl.length > 2_000_000) {
+        setToast({
+          color: "red",
+          title: "Image too large",
+          message: "That image is too large to save. Please choose a smaller one.",
+        });
+        URL.revokeObjectURL(objectUrl);
+        return;
+      }
+
+      setCustomCovers((previous) => {
+        const next = { ...previous, [bookId]: imageUrl };
+        localStorage.setItem(CUSTOM_COVERS_STORAGE_KEY, JSON.stringify(next));
+        return next;
+      });
+
+      setToast({
+        color: "teal",
+        title: "Cover updated",
+        message: "Your textbook cover image was updated.",
+      });
+
+      URL.revokeObjectURL(objectUrl);
+    };
+
+    reader.readAsDataURL(file);
+  };
+
+  img.onerror = () => {
+    URL.revokeObjectURL(objectUrl);
+    setToast({
+      color: "red",
+      title: "Invalid image",
+      message: "That image could not be loaded. Please choose a different file.",
+    });
+  };
+
+  img.src = objectUrl;
+};
 
   const fetchTextbooks = useCallback(async () => {
     try {
@@ -325,6 +425,46 @@ export default function History() {
     }
   }, [navigate]);
 
+  const handleDeleteTextbook = async (bookId) => {
+    try {
+      const response = await authFetch(`${API_BASE}/api/textbooks/${bookId}`, {
+        method: "DELETE",
+      });
+
+      if (!response.ok) {
+        const payload = await response.json().catch(() => ({}));
+        throw new Error(payload.error || "Failed to delete textbook.");
+      }
+
+      setTextbooks((previousBooks) =>
+        previousBooks.filter((book) => book.id !== bookId)
+      );
+
+      const pendingList = readPendingTextbooks().filter((book) => book.id !== bookId);
+      writePendingTextbooks(pendingList);
+
+      setCustomCovers((previous) => {
+        const next = { ...previous };
+        delete next[bookId];
+        localStorage.setItem(CUSTOM_COVERS_STORAGE_KEY, JSON.stringify(next));
+        return next;
+      });
+
+      setToast({
+        color: "teal",
+        title: "Textbook deleted",
+        message: "The textbook was removed successfully.",
+      });
+    } catch (error) {
+      console.error("Failed to delete textbook:", error);
+      setToast({
+        color: "red",
+        title: "Delete failed",
+        message: error.message || "Could not delete this textbook.",
+      });
+    }
+  };
+
   const pollStatuses = useCallback(async (bookIds) => {
     if (!bookIds.length) return;
 
@@ -354,7 +494,6 @@ export default function History() {
             chapterCount: payload.chapter_count ?? payload.chapterCount ?? 0,
             pretestsReady: payload.pretests_ready ?? payload.pretestsReady ?? 0,
           };
-
         } catch (error) {
           console.error(`Failed to poll textbook ${bookId}:`, error);
           return null;
@@ -560,7 +699,6 @@ export default function History() {
                 </div>
               </div>
             ) : textbooks.length === 0 ? (
-
               <Paper withBorder radius="md" className="history-empty">
                 <Text fw={600}>No textbooks yet</Text>
                 <Text c="dimmed" size="sm" mt={6}>
@@ -573,6 +711,7 @@ export default function History() {
                   const clickable = CLICKABLE_STATUSES.has(String(book.status || "").toLowerCase());
                   const showCompleteSplash = Boolean(recentlyCompleted[book.id]);
                   const presentation = getBookPresentation(book, showCompleteSplash);
+                  const customCover = customCovers[book.id];
 
                   return (
                     <Paper
@@ -599,6 +738,37 @@ export default function History() {
                         }
                       }}
                     >
+                      <button
+                        type="button"
+                        className="history-delete-btn"
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          handleDeleteTextbook(book.id);
+                        }}
+                        aria-label={`Delete ${trimPdfExtension(book.title)}`}
+                      >
+                        <IconX size={14} />
+                      </button>
+
+                      <label
+                        className="history-cover-upload-btn"
+                        onClick={(e) => e.stopPropagation()}
+                        aria-label={`Upload cover for ${trimPdfExtension(book.title)}`}
+                      >
+                        <input
+                          type="file"
+                          accept="image/*"
+                          className="history-cover-upload-input"
+                          onChange={(e) => {
+                            e.stopPropagation();
+                            const file = e.target.files?.[0];
+                            handleCoverUpload(book.id, file);
+                            e.target.value = "";
+                          }}
+                        />
+                        <IconPhotoUp size={16} />
+                      </label>
+
                       <div
                         className={[
                           "history-cover",
@@ -607,7 +777,13 @@ export default function History() {
                           .filter(Boolean)
                           .join(" ")}
                       >
-                        {clickable && !showCompleteSplash ? (
+                        {customCover ? (
+                          <img
+                            src={customCover}
+                            alt={`${trimPdfExtension(book.title)} cover`}
+                            className="history-custom-cover"
+                          />
+                        ) : clickable && !showCompleteSplash ? (
                           <div className="history-img-icon">
                             <BookPlaceholderIcon />
                           </div>
@@ -625,7 +801,9 @@ export default function History() {
                               ]}
                               label={
                                 <div className="history-progressLabelWrap">
-                                  <span className="history-progressLabel">{presentation.centerLabel}</span>
+                                  <span className="history-progressLabel">
+                                    {presentation.centerLabel}
+                                  </span>
                                 </div>
                               }
                             />
@@ -646,6 +824,7 @@ export default function History() {
                       <Text size="sm" c="dimmed" mt={6} className="history-book-statusText">
                         {presentation.description}
                       </Text>
+
                       {!clickable && (
                         <Text size="xs" c="dimmed" className="history-book-helperText">
                           This can take a few minutes.
