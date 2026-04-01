@@ -9,7 +9,7 @@ import {
   IconUser,
   IconSettings,
   IconLogout,
-  IconHistory,
+  IconBookUpload,
 } from "@tabler/icons-react";
 import brain from "../assets/generic_brain.png";
 import classes from "./NavBar.module.css";
@@ -28,15 +28,20 @@ export default function NavBar({ isAuthed = true }) {
       <div className={classes.inner}>
 
         {/* LEFT */}
-        <button className={classes.brand} type="button" onClick={() => navigate("/courses")}>
+        <button className={classes.brand} type="button" onClick={() => navigate("/upload")}>
           <img src={brain} alt="Flowstate" className={classes.logo} />
           <span className={classes.brandText}>Flowstate</span>
         </button>
 
         {/* CENTER */}
         <Group gap="sm" className={classes.nav}>
-          <Button variant="subtle" leftSection={<IconBooks size={18} />} onClick={() => navigate("/courses")}>
-            Courses
+          <Button variant="subtle" leftSection={<IconBookUpload size={18} />} onClick={() => navigate("/upload")}>
+            Upload
+          </Button>
+
+          <Button variant="subtle" leftSection={<IconBooks size={18} />} onClick={() => navigate("/textbooks")}
+          >
+            Textbooks
           </Button>
 
           <Button variant="subtle" leftSection={<IconLayoutDashboard size={18} />} onClick={() => navigate("/dashboard")}>
@@ -47,10 +52,6 @@ export default function NavBar({ isAuthed = true }) {
             About
           </Button>
 
-          <Button variant="subtle" leftSection={<IconHistory size={18} />} onClick={() => navigate("/history")}
-          >
-            History
-          </Button>
         </Group>
 
         {}

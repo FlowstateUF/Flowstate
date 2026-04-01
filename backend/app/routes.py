@@ -11,20 +11,32 @@ from app.services.question_prompts import (
 from app.services.supabase_service import (
     authenticate_user, 
     check_email_exists, 
+    check_pretest_exists,
     check_textbook_exists,
     check_username_exists, 
     create_user, 
     fetch_chapter_chunks,
     get_textbook,
+    get_textbook_info,
+    get_toc,
     get_user_by_id, 
+    list_user_textbooks,
     store_toc,
     upload_textbook_to_supabase
 )
+
 from app.services.textbook_service import extract_toc
 from app.services.vector_service import (
     get_collection_info, 
     retrieve_context
 )
+
+from app.services.textbook_info import(
+    display_title,
+    build_textbook_progress,
+    serialize_textbook_card
+)
+
 from app.processing import process_textbook
 from app.config import settings
 from flask_jwt_extended import create_access_token, jwt_required, get_jwt_identity
@@ -139,6 +151,14 @@ def register_routes(app):
 
 
     # ** Textbook Behavior Routers **
+
+    @app.get("/api/textbooks")
+    @jwt_required()
+    def list_textbooks():
+        user_id = get_jwt_identity()
+        textbooks = list_user_textbooks(user_id)
+        payload = [serialize_textbook_card(book) for book in textbooks]
+        return jsonify({"textbooks": payload}), 200
     
     @app.post("/api/upload")
     @jwt_required()
@@ -164,7 +184,10 @@ def register_routes(app):
                 return jsonify({
                     "status": "exists",
                     "message": "This textbook was already uploaded and parsed",
-                    "textbook_id": existing_id
+                    "textbook_id": existing_id,
+                    "filename": existing.get("title") or file.filename,
+                    "display_title": display_title(existing.get("title") or file.filename),
+                    "processing_status": existing.get("status") or "processing",
                 }), 200
             
             # Upload textbook
@@ -198,6 +221,7 @@ def register_routes(app):
             "message": "PDF uploaded successfully",
             "textbook_id": textbook['id'],
             "filename": textbook['title'],
+            "display_title": display_title(textbook["title"]),
             "storage_path": textbook['storage_path']
         }), 202
     
@@ -206,20 +230,12 @@ def register_routes(app):
     @jwt_required()
     def get_textbook_status(textbook_id):
         user_id = get_jwt_identity()
-        if not get_textbook(user_id, textbook_id).data:
+        owned = get_textbook(user_id, textbook_id)
+        if not owned.data:
             return jsonify({"error": "Not found"}), 404
 
         info = get_textbook_info(textbook_id)
-        toc = get_toc(textbook_id)
-        pretests_ready = sum(
-            1 for ch in toc if check_pretest_exists(textbook_id, ch["id"])
-        )
-        return jsonify({
-            "status": info["status"],
-            "chapter_count": len(toc),
-            "pretests_ready": pretests_ready,
-        }), 200
-
+        return jsonify(serialize_textbook_card(info)), 200
    
     # ** NaviGator Routes **
 

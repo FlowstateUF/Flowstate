@@ -65,7 +65,8 @@ def upload_textbook_to_supabase(user_id: int, file_bytes: bytes, filename: str) 
         "user_id": user_id,
         "title": filename,
         "storage_path": storage_path,
-        "file_size": len(file_bytes)
+        "file_size": len(file_bytes),
+        "status": "processing"
     }).execute()
 
     return record.data[0]
@@ -80,7 +81,7 @@ def get_textbook_info(textbook_id: str) -> dict:
 
 def list_user_textbooks(user_id: str) -> list[dict]:
     result = supabase.table("textbooks").select("*").eq("user_id", user_id).execute()
-    return result.data
+    return result.data or []
 
 def update_textbook_status(textbook_id: str, status: str, chunk_count: int = None):
     update = {"status": status}
@@ -107,8 +108,8 @@ def get_textbook(user_id: str, textbook_id: str):
 def check_textbook_exists(user_id: str, filename: str):
     res = (
         supabase.table("textbooks")
-        .select("id, status")
-        .eq("user_id", user_id)  # ← make sure this is there
+        .select("id, status, title")
+        .eq("user_id", user_id)
         .eq("title", filename)
         .limit(1)
         .execute()

@@ -43,15 +43,12 @@ createRoot(document.getElementById('root')).render(
           <Route path="/register" element={<Register />} />
           <Route path="/login" element={<Login />} />
 
-          {/* THIS IS A TEST ROUTE TO SEE LLM INTEGRATION */}
-          <Route path="/test" element={<Test />} />
-
            {/* Will require logging in (once implemented) */}
-          <Route path="/courses" element={<Courses />} />
+          <Route path="/upload" element={<Courses />} />
           <Route path="/dashboard" element={<Dashboard />} />
           <Route path="/about" element={<About />} />
           <Route path="/stats" element={<Stats />} />
-          <Route path="/history" element={<History />} />
+          <Route path="/textbooks" element={<History />} />
           <Route path="/flash" element={<Flash />} />
           <Route path="/quiz" element={<Quiz />} />
           <Route path="/quiz/results" element={<QuizResults />} />

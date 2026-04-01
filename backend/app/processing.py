@@ -41,7 +41,7 @@ def process_textbook(user_id: str, textbook_id: str, file_bytes: bytes):
       - Mark ready/partial depending on coverage
     """
     try:
-        update_textbook_status(textbook_id, "processing")
+        update_textbook_status(textbook_id, "parsing", 0)
 
         toc = get_toc(textbook_id)
         total_pages = get_textbook_page_count(textbook_id)  # stored during upload via store_toc()
@@ -85,21 +85,29 @@ def process_textbook(user_id: str, textbook_id: str, file_bytes: bytes):
 
             all_chunks.extend(batch_chunks)
             start_index += len(batch_chunks)
+
+            update_textbook_status(textbook_id, "parsing", page_end)
+            
             page_start = page_end + 1
+
 
         # coverage check
         pages = [c.get("page_start") for c in all_chunks if isinstance(c.get("page_start"), int)]
         max_p = max(pages) if pages else None
 
-        status = "ready"
+        final_status = "ready"
         if max_p is None or (total_pages and max_p < int(0.9 * total_pages)):
-            status = "partial"
+            final_status = "partial"
 
-        print("[process_textbook] done", {"chunks": len(all_chunks), "max_page": max_p, "total_pages": total_pages, "status": status})
+        print("[process_textbook] done", {"chunks": len(all_chunks), "max_page": max_p, "total_pages": total_pages, "status": final_status})
 
-        update_textbook_status(textbook_id, status, len(all_chunks))
+        update_textbook_status(textbook_id, "generating_pretests", len(all_chunks))
+        print("[process_textbook] generating pretests")
 
         generate_all_pretests(user_id, textbook_id, toc)
+
+        update_textbook_status(textbook_id, final_status, len(all_chunks))
+        print("[process_textbook] complete", {"textbook_id": textbook_id, "status": final_status})
 
     except Exception as e:
         update_textbook_status(textbook_id, "failed")

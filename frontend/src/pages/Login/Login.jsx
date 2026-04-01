@@ -49,7 +49,7 @@ export default function Login() {
       localStorage.setItem("access_token", data.access_token);
       localStorage.setItem("user", JSON.stringify(data.user));
 
-      navigate("/courses");
+      navigate("/upload");
     } catch (err) {
       setError(err.message || "Login failed");
     } finally {
