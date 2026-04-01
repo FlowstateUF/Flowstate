@@ -1,0 +1,66 @@
+.account-page {
+  min-height: calc(100vh - 70px); /* subtract navbar height */
+  background: radial-gradient(
+      circle at 20% 20%,
+      #0a1a3a,
+      #020617 60%
+    ),
+    linear-gradient(
+      135deg,
+      #020617 0%,
+      #020617 100%
+    );
+
+  display: flex;
+  align-items: center;     /* vertical center */
+  justify-content: center; /* horizontal center */
+
+  padding: 2rem;
+}
+
+/* BIG main white panel */
+.account-card {
+  background: white;
+  border: none;
+
+  width: 30vw;          /* ✅ takes 75% of screen width */
+  max-width: 1000px;   /* prevents it from being absurdly large */
+  min-height: 60vh;    /* ✅ makes it tall like a real page */
+
+  padding: 3rem;       /* more spacing inside */
+
+  border-radius: 20px;
+  box-shadow: 0 20px 60px rgba(0, 0, 0, 0.3);
+
+  display: flex;
+  flex-direction: column;
+  justify-content: space-between;
+}
+
+/* loading text */
+.account-loading {
+  color: white;
+  padding: 2rem;
+  text-align: center;
+}
+
+/* optional: make text spacing feel more premium */
+.account-card h2,
+.account-card h3 {
+  margin: 0;
+}
+
+.account-card p {
+  margin: 0;
+}
+
+/* improve spacing between sections */
+.account-card .mantine-Stack-root {
+  height: 100%;
+}
+
+/* smooth hover (subtle, not too flashy) */
+.account-card:hover {
+  transform: translateY(-2px);
+  transition: 0.2s ease;
+}

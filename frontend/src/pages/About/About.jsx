@@ -28,19 +28,10 @@ export default function About() {
       <main className="about-body">
         <div className="about-body-inner">
           <p className="about-paragraph">
-            Flowstate was created by a group of five dedicated University of Florida students with one simple goal:
-              make learning more accessible to average student. For years this group was fed up with unnecessary and high-end tutoring fees
-              that plauge university campuses, so they Flowstate was created as an alternative.
-              The main mission behind flowstate was to to create a free, accessible way for students to improve their
-            comprehension, practice smarter, and build real confidence with their classwork without
-            paying hundreds of dollars just to keep up. Through Flowstate, students can upload their textbooks and recieve a personalized learning plan
-              tailored to their strengths and weaknesses that ensures they can succeed in any classroom.Flowstate was created by a group of five dedicated University of Florida students with one simple goal:
-              make learning more accessible to average student. For years this group was fed up with unnecessary and high-end tutoring fees
-              that plauge university campuses, so they Flowstate was created as an alternative.
-              The main mission behind flowstate was to to create a free, accessible way for students to improve their
-            comprehension, practice smarter, and build real confidence with their classwork without
-            paying hundreds of dollars just to keep up. Through Flowstate, students can upload their textbooks and recieve a personalized learning plan
-              tailored to their strengths and weaknesses that ensures they can succeed in any classroom.
+            Flowstate was built by a group of five University of Florida students who all shared the same ideal: learning should be accessible, effective, and equitable for any student. While in college, every member of the Flowstate team experienced the obstacles that can come in the way when a student commits themselves to a higher education, whether that be dense course material, limited time, or just the pressure to keep up with the pace of ever expanding work. What stood out most to the team was how inaccessible tutoring or any type of academic support had become. The traditional tutoring services that were peppered around campus seemed designed to create a system where only affluent students could afford the help they needed, with services priced at hundreds of dollars a semester, it created an atmosphere where the average student felt alienated the second they walked through the door.
+Frustrated by this reality, the team set out to build something different. In their senior year, Flowstate came together to create a platform that could bring that level of personailized academic support that one would buy from a professional institution, but without any financial barrier.
+The mentality of Flowstate is to help students learn in a more direct and simplistic way, by cutting through the red tape and monotony that students find themselves getting lost in, it makes the entire learning experience less taxing and more engaging. Instead of relying on outdated study methods, students upload their own textbooks directly into the platform and Flowstate analyzes that content  in order to generate personalized learning experiences tailored to each individual’s strengths, weaknesses, and learning pace.
+The goal of Flowstate isn’t just that students should pass exams, but it is to help students truly understand the material that they are learning. Through the reinforcement of comprehension and encouraging an active engagement with their study material, Flowstate allows students to build lasting confidence with their academic abilities.
 
           </p>
         </div>

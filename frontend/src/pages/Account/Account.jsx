@@ -1,8 +1,22 @@
 import { useEffect, useState } from "react";
 import { useNavigate } from "react-router-dom";
-import { authFetch } from "../../utils/authFetch";
+import {
+  Container,
+  Paper,
+  Stack,
+  Title,
+  Text,
+  Group,
+  Button,
+  Divider,
+  Avatar,
+} from "@mantine/core";
 
-function Account() {
+import NavBar from "../../components/NavBar";
+import { authFetch } from "../../utils/authFetch";
+import "./Account.css";
+
+export default function Account() {
   const [user, setUser] = useState(null);
   const navigate = useNavigate();
 
@@ -23,16 +37,66 @@ function Account() {
   }, [navigate]);
 
   if (!user) {
-    return <div style={{ padding: "2rem" }}>Loading...</div>;
+    return (
+      <>
+        <NavBar isAuthed={true} />
+        <div className="account-loading">Loading...</div>
+      </>
+    );
   }
 
   return (
-    <div style={{ padding: "2rem" }}>
-      <h2>Account</h2>
-      <p><strong>Username:</strong> {user.username}</p>
-      <p><strong>Email:</strong> {user.email}</p>
-    </div>
+    <>
+      <NavBar isAuthed={true} />
+
+      <main className="account-page">
+        <Container size="md">
+          <Paper withBorder radius="lg" p="xl" className="account-card">
+            <Stack gap="lg">
+
+              {/* Header */}
+              <Group align="center" gap="md">
+                <Avatar size="lg" radius="xl" color="blue" />
+                <div>
+                  <Title order={2}>Your Account</Title>
+                  <Text c="dimmed" size="sm">
+                    Profile information
+                  </Text>
+                </div>
+              </Group>
+
+              <Divider />
+
+              {/* Info */}
+              <Stack gap="md">
+                <div>
+                  <Text size="sm" c="dimmed">Username</Text>
+                  <Text fw={600} size="lg">{user.username}</Text>
+                </div>
+
+                <div>
+                  <Text size="sm" c="dimmed">Email</Text>
+                  <Text fw={600} size="lg">{user.email}</Text>
+                </div>
+              </Stack>
+
+              <Divider />
+
+              {/* Logout */}
+              <Group justify="flex-start">
+                <Button
+                  color="red"
+                  variant="light"
+                  onClick={() => navigate("/login")}
+                >
+                  Log Out
+                </Button>
+              </Group>
+
+            </Stack>
+          </Paper>
+        </Container>
+      </main>
+    </>
   );
 }
-
-export default Account;
