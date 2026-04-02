@@ -27,6 +27,7 @@ export default function Dashboard() {
 
   const [selectedTextbook, setSelectedTextbook] = useState(null);
   const [selectedChapter, setSelectedChapter] = useState(null);
+  const [selectedDifficulty, setSelectedDifficulty] = useState("1");
 
   const [textbooks, setTextbooks] = useState([]);
   const [chapters, setChapters] = useState([]);
@@ -187,8 +188,14 @@ export default function Dashboard() {
                     />
                     <Select
                       label="Difficulty"
-                      placeholder="5"
-                      data={["1", "2", "3", "4", "5"]}
+                      data={[
+                        { value: "1", label: "1 - Recall" },
+                        { value: "2", label: "2 - Understand" },
+                        { value: "3", label: "3 - Apply" },
+                        { value: "4", label: "4 - Analyze" },
+                      ]}
+                      value={selectedDifficulty}
+                      onChange={setSelectedDifficulty}
                     />
                   </SimpleGrid>
 
@@ -239,7 +246,22 @@ export default function Dashboard() {
                     <Button
                       radius="xl"
                       fullWidth
-                      onClick={() => navigate("/quiz")}
+                      onClick={() => {
+                      if (!selectedTextbook || !selectedChapter || !selectedDifficulty) {
+                        alert("Select textbook, chapter, and difficulty first");
+                        return;
+                      }
+                      const chapterObj = chapters.find(
+                        (ch) => ch.value === selectedChapter
+                      );
+                      navigate("/quiz", {
+                        state: {
+                          textbook_id: selectedTextbook,
+                          chapter_title: chapterObj?.label,
+                          difficulty: selectedDifficulty,
+                        },
+                      });
+                    }}
                     >
                       Quizzes
                     </Button>

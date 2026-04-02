@@ -463,3 +463,77 @@ def register_routes(app):
             "chapter_title": chapter_title,
             "flashcards": result.get("flashcards", [])
         }), 200
+    
+
+    @app.post("/api/generate/quiz")
+    @jwt_required()
+    def generate_quiz():
+        user_id = get_jwt_identity()
+        data = request.get_json(silent=True) or {}
+
+        textbook_id = data.get("textbook_id")
+        chapter_title = (data.get("chapter_title") or "").strip()
+        difficulty = str(data.get("difficulty") or "1")
+        num_questions = int(data.get("num_questions") or 5)
+
+        if not textbook_id:
+            return jsonify({"error": "textbook_id required"}), 400
+
+        if not chapter_title:
+            return jsonify({"error": "chapter_title required"}), 400
+
+        difficulty_map = {
+            "1": "recall",
+            "2": "understand",
+            "3": "apply",
+            "4": "analyze",
+            "recall": "recall",
+            "understand": "understand",
+            "apply": "apply",
+            "analyze": "analyze",
+        }
+
+        question_type = difficulty_map.get(difficulty)
+        if not question_type:
+            return jsonify({"error": "difficulty must be 1-4 or a valid type"}), 400
+
+        owned = get_textbook(user_id, textbook_id)
+        if not owned.data:
+            return jsonify({"error": "Textbook not found or unauthorized"}), 404
+
+        points = fetch_all_chunks(
+            textbook_id=textbook_id,
+            chapter_title=chapter_title,
+            user_id=user_id
+        )
+
+        if not points:
+            return jsonify({"error": "No chunks found for that chapter"}), 400
+
+        rows = []
+        for p in points:
+            payload = p.payload or {}
+            rows.append({
+                "content": payload.get("text") or payload.get("content") or "",
+                "page_number": payload.get("page_number") or payload.get("page_start"),
+            })
+
+        context = _build_context_from_chunks(rows, max_chars=14000)
+        if not context.strip():
+            return jsonify({"error": "Empty context after filtering"}), 400
+
+        llm = LLMService(api_key=settings.NAVIGATOR_API_KEY)
+
+        result = llm.generate_quiz(
+            context=context,
+            question_type=question_type,
+            num_questions=num_questions,
+            temp=0.3
+        )
+
+        return jsonify({
+            "status": "success",
+            "difficulty": difficulty,
+            "question_type": question_type,
+            "questions": result["questions"]
+        }), 200

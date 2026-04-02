@@ -213,3 +213,19 @@ class LLMService:
         
 
         return data["questions"]
+    
+    def generate_quiz(self, context, question_type="recall", num_questions=5, temp=0.3):
+        questions = []
+        # adjust for duplicate questions later
+
+        for _ in range(num_questions):
+            q = self.generate_question(
+                context=context,
+                question_type=question_type,
+                temp=temp
+            )
+            questions.append(q)
+
+        return {
+            "questions": questions
+        }

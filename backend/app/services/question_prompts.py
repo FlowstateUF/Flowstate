@@ -235,6 +235,8 @@ FLASHCARD RULES:
 - Questions must be clear, specific, and unambiguous
 - Answers must be concise (1–3 sentences max)
 - Prefer conceptual understanding over memorization
+- Prefer questions that test definitions, relationships, or key ideas
+- Avoid trivial or overly obvious questions
 - Avoid repeating the same idea across multiple cards
 - Do NOT create scenario-based cards (save scenarios for Apply/Analyze quizzes)
 
