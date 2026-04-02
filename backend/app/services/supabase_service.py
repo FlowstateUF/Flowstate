@@ -193,11 +193,11 @@ def fetch_chapter_chunks(textbook_id: str, chapter_id: str, limit: int = 60) -> 
     # Pull the first N chunks in that chapter (ordered)
     res = (
         supabase.table("chunks")
-        .select("id, page_number, rindex, content")
+        .select("id, page_number, index, content")
         .eq("textbook_id", textbook_id)
         .eq("chapter_id", chapter_id)
         .order("page_number")
-        .order("rindex")
+        .order("index")
         .limit(limit)
         .execute()
     )
