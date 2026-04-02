@@ -1,6 +1,6 @@
 from app.clients import qdrant
 from app.services.embedding_service import embed_query
-from qdrant_client.models import FieldCondition, Filter, MatchValue, PointStruct
+from qdrant_client.models import FieldCondition, Filter, MatchValue, PointStruct, PointIdsList
 import uuid
 
 def get_collection_info(vector: str):
@@ -90,3 +90,33 @@ def fetch_all_chunks(textbook_id: str, chapter_title: str, user_id: str) -> list
             break
 
     return all_results
+
+def delete_textbook_chunks(user_id: str, textbook_id: str):
+    flt = Filter(must=[
+        FieldCondition(key="user_id", match=MatchValue(value=str(user_id))),
+        FieldCondition(key="textbook_id", match=MatchValue(value=str(textbook_id))),
+    ])
+
+    all_ids = []
+    offset = None
+
+    while True:
+        results, offset = qdrant.scroll(
+            collection_name="chunks",
+            scroll_filter=flt,
+            limit=100,
+            offset=offset,
+            with_payload=False,
+            with_vectors=False,
+        )
+
+        all_ids.extend([point.id for point in results if point.id is not None])
+
+        if offset is None:
+            break
+
+    if all_ids:
+        qdrant.delete(
+            collection_name="chunks",
+            points_selector=PointIdsList(points=all_ids),
+        )

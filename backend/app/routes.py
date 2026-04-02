@@ -22,6 +22,8 @@ from app.services.supabase_service import (
     get_toc,
     get_user_by_id, 
     list_user_textbooks,
+    rename_textbook_for_user,
+    delete_textbook_for_user,
     store_toc,
     upload_textbook_to_supabase
 )
@@ -29,12 +31,12 @@ from app.services.supabase_service import (
 from app.services.textbook_service import extract_toc
 from app.services.vector_service import (
     get_collection_info, 
-    retrieve_context
+    retrieve_context,
+    delete_textbook_chunks
 )
 
 from app.services.textbook_info import(
     display_title,
-    build_textbook_progress,
     serialize_textbook_card
 )
 
@@ -239,6 +241,53 @@ def register_routes(app):
 
         info = get_textbook_info(textbook_id)
         return jsonify(serialize_textbook_card(info)), 200
+    
+    @app.patch("/api/textbooks/<textbook_id>/rename")
+    @jwt_required()
+    def rename_textbook(textbook_id):
+        user_id = get_jwt_identity()
+        data = request.get_json(silent=True) or {}
+
+        new_title = (data.get("title") or "").strip()
+
+        if not new_title:
+            return jsonify({"error": "title is required"}), 400
+
+        if len(new_title) > 120:
+            return jsonify({"error": "title must be 120 characters or fewer"}), 400
+
+        if "/" in new_title or "\\" in new_title:
+            return jsonify({"error": "title cannot contain slashes"}), 400
+
+        updated = rename_textbook_for_user(user_id, textbook_id, new_title)
+        if not updated:
+            return jsonify({"error": "Textbook not found or unauthorized"}), 404
+
+        return jsonify(serialize_textbook_card(updated)), 200
+
+
+    @app.delete("/api/textbooks/<textbook_id>")
+    @jwt_required()
+    def delete_textbook_route(textbook_id):
+        user_id = get_jwt_identity()
+
+        owned = get_textbook(user_id, textbook_id)
+        if not owned.data:
+            return jsonify({"error": "Textbook not found or unauthorized"}), 404
+
+        try:
+            delete_textbook_chunks(user_id, textbook_id)
+        except Exception as e:
+            print("[delete_textbook] qdrant cleanup failed:", repr(e))
+
+        deleted = delete_textbook_for_user(user_id, textbook_id)
+        if not deleted:
+            return jsonify({"error": "Textbook could not be deleted"}), 500
+
+        return jsonify({
+            "status": "success",
+            "message": "Textbook deleted successfully",
+        }), 200
    
     # ** NaviGator Routes **
 

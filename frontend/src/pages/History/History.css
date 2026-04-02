@@ -91,6 +91,14 @@
   width: fit-content;
 }
 
+.history-renameRow {
+  align-items: flex-end;
+}
+
+.history-renameInput {
+  flex: 1;
+}
+
 .history-custom-cover {
   width: 100%;
   height: 100%;

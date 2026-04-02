@@ -265,6 +265,7 @@ export default function History() {
   const [manageBook, setManageBook] = useState(null);
   const [deleteBook, setDeleteBook] = useState(null);
   const [deleteConfirmText, setDeleteConfirmText] = useState("");
+  const [renameTitle, setRenameTitle] = useState("");
   const [customCovers, setCustomCovers] = useState(() => {
     try {
       return JSON.parse(localStorage.getItem(CUSTOM_COVERS_STORAGE_KEY) || "{}");
@@ -400,6 +401,65 @@ const handleCoverUpload = (bookId, file) => {
       title: "Cover removed",
       message: "The custom cover image was removed.",
     });
+  };
+
+  const openManageModal = (book) => {
+    setManageBook(book);
+    setRenameTitle(trimPdfExtension(book.title));
+  };
+
+  const handleRenameTextbook = async () => {
+    if (!manageBook) return;
+
+    const nextTitle = renameTitle.trim();
+    if (!nextTitle) {
+      setToast({
+        color: "red",
+        title: "Name required",
+        message: "Please enter a textbook name.",
+      });
+      return;
+    }
+
+    try {
+      const response = await authFetch(`${API_BASE}/api/textbooks/${manageBook.id}/rename`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ title: nextTitle }),
+      });
+
+      const payload = await response.json().catch(() => ({}));
+      if (!response.ok) {
+        throw new Error(payload.error || "Could not rename textbook.");
+      }
+
+      setManageBook(payload);
+      setRenameTitle(trimPdfExtension(payload.title || nextTitle));
+
+      setTextbooks((previousBooks) =>
+        previousBooks.map((book) =>
+          book.id === payload.id ? { ...book, title: payload.title } : book
+        )
+      );
+
+      const nextPending = readPendingTextbooks().map((book) =>
+        book.id === payload.id ? { ...book, title: payload.title } : book
+      );
+      writePendingTextbooks(nextPending);
+
+      setToast({
+        color: "teal",
+        title: "Textbook renamed",
+        message: "The display name was updated.",
+      });
+    } catch (error) {
+      console.error("Failed to rename textbook:", error);
+      setToast({
+        color: "red",
+        title: "Rename failed",
+        message: error.message || "Could not rename this textbook.",
+      });
+    }
   };
 
   const fetchTextbooks = useCallback(async () => {
@@ -711,7 +771,10 @@ const handleCoverUpload = (bookId, file) => {
 
       <Modal
   opened={Boolean(manageBook)}
-  onClose={() => setManageBook(null)}
+  onClose={() => {
+    setManageBook(null);
+    setRenameTitle("");
+}}
   title={manageBook ? `Manage ${trimPdfExtension(manageBook.title)}` : "Manage textbook"}
   centered
 >
@@ -754,14 +817,32 @@ const handleCoverUpload = (bookId, file) => {
     <div className="history-manageSection">
       <Text fw={600}>Rename</Text>
       <Text size="sm" c="dimmed">
-        Add this once you have a backend rename route so the change persists everywhere.
+        Choose the display name shown in your library.
       </Text>
+
+      <Group align="end" className="history-renameRow">
+        <TextInput
+          value={renameTitle}
+          onChange={(e) => setRenameTitle(e.currentTarget.value)}
+          placeholder="Textbook name"
+          className="history-renameInput"
+        />
+        <Button
+          onClick={handleRenameTextbook}
+          disabled={
+            !renameTitle.trim() ||
+            renameTitle.trim() === trimPdfExtension(manageBook?.title || "")
+          }
+        >
+          Save name
+        </Button>
+      </Group>
     </div>
 
     <div className="history-manageSection">
       <Text fw={600}>Hide / archive</Text>
       <Text size="sm" c="dimmed">
-        Add this once you also have an archived textbooks view, so hidden books can be restored.
+        We can wire this next after delete and rename are working.
       </Text>
     </div>
   </Stack>
@@ -895,7 +976,7 @@ const handleCoverUpload = (bookId, file) => {
 
                           <Menu.Item
                             leftSection={<IconPhotoUp size={14} />}
-                            onClick={() => setManageBook(book)}
+                            onClick={() => openManageModal(book)}
                           >
                             Manage
                           </Menu.Item>

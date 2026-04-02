@@ -106,6 +106,37 @@ def get_textbook(user_id: str, textbook_id: str):
     )
     return res
 
+def rename_textbook_for_user(user_id: str, textbook_id: str, new_title: str) -> dict | None:
+    result = (
+        supabase.table("textbooks")
+        .update({"title": new_title})
+        .eq("id", textbook_id)
+        .eq("user_id", user_id)
+        .execute()
+    )
+    return result.data[0] if result.data else None
+
+
+def delete_textbook_for_user(user_id: str, textbook_id: str) -> dict | None:
+    info = get_textbook_info(textbook_id)
+    if not info or str(info.get("user_id")) != str(user_id):
+        return None
+
+    storage_path = info.get("storage_path")
+
+    supabase.table("pretests").delete().eq("textbook_id", textbook_id).execute()
+    supabase.table("chunks").delete().eq("textbook_id", textbook_id).execute()
+    supabase.table("chapters").delete().eq("textbook_id", textbook_id).execute()
+    supabase.table("textbooks").delete().eq("id", textbook_id).eq("user_id", user_id).execute()
+
+    if storage_path:
+        try:
+            supabase.storage.from_("textbooks").remove([storage_path])
+        except Exception:
+            pass
+
+    return info
+
 def check_textbook_exists(user_id: str, file_hash: str):
     res = (
         supabase.table("textbooks")
