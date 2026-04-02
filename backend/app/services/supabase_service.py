@@ -47,7 +47,7 @@ def get_user_by_id(user_id) -> dict:
 
 # Textbooks 
 
-def upload_textbook_to_supabase(user_id: int, file_bytes: bytes, filename: str) -> dict:
+def upload_textbook_to_supabase(user_id: int, file_bytes: bytes, filename: str, file_hash: str) -> dict:
     storage_path = f"{user_id}/{filename}"
 
     try:
@@ -66,7 +66,8 @@ def upload_textbook_to_supabase(user_id: int, file_bytes: bytes, filename: str) 
         "title": filename,
         "storage_path": storage_path,
         "file_size": len(file_bytes),
-        "status": "processing"
+        "status": "processing",
+        "file_hash": file_hash
     }).execute()
 
     return record.data[0]
@@ -105,12 +106,12 @@ def get_textbook(user_id: str, textbook_id: str):
     )
     return res
 
-def check_textbook_exists(user_id: str, filename: str):
+def check_textbook_exists(user_id: str, file_hash: str):
     res = (
         supabase.table("textbooks")
         .select("id, status, title")
         .eq("user_id", user_id)
-        .eq("title", filename)
+        .eq("file_hash", file_hash)
         .limit(1)
         .execute()
     )

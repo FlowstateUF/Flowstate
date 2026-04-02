@@ -1,3 +1,4 @@
+import hashlib
 import re, time, traceback
 from flask import request, jsonify
 from openai import OpenAI
@@ -173,9 +174,10 @@ def register_routes(app):
         try:
             print("[upload] reading file")
             file_bytes = file.read()
+            file_hash = hashlib.sha256(file_bytes).hexdigest()
 
             # Check if this user already uploaded this file
-            existing = check_textbook_exists(user_id, file.filename)
+            existing = check_textbook_exists(user_id, file_hash)
 
             if existing:
                 existing_id = existing["id"]
@@ -196,6 +198,7 @@ def register_routes(app):
                 user_id=user_id,
                 file_bytes=file_bytes,
                 filename=file.filename,
+                file_hash=file_hash
             )
             textbook_id = textbook['id']
 
