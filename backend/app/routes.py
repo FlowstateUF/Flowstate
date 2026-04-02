@@ -24,6 +24,7 @@ from app.services.supabase_service import (
     list_user_textbooks,
     rename_textbook_for_user,
     delete_textbook_for_user,
+    set_textbook_starred_for_user,
     store_toc,
     upload_textbook_to_supabase
 )
@@ -159,6 +160,7 @@ def register_routes(app):
     @jwt_required()
     def list_textbooks():
         user_id = get_jwt_identity()
+        include_all = request.args.get("all", "false").lower() == "true"
         textbooks = list_user_textbooks(user_id)
         payload = [serialize_textbook_card(book) for book in textbooks]
         return jsonify({"textbooks": payload}), 200
@@ -260,6 +262,22 @@ def register_routes(app):
             return jsonify({"error": "title cannot contain slashes"}), 400
 
         updated = rename_textbook_for_user(user_id, textbook_id, new_title)
+        if not updated:
+            return jsonify({"error": "Textbook not found or unauthorized"}), 404
+
+        return jsonify(serialize_textbook_card(updated)), 200
+    
+    @app.patch("/api/textbooks/<textbook_id>/star")
+    @jwt_required()
+    def star_textbook(textbook_id):
+        user_id = get_jwt_identity()
+        data = request.get_json(silent=True) or {}
+
+        is_starred = data.get("is_starred")
+        if not isinstance(is_starred, bool):
+            return jsonify({"error": "is_starred must be true or false"}), 400
+
+        updated = set_textbook_starred_for_user(user_id, textbook_id, is_starred)
         if not updated:
             return jsonify({"error": "Textbook not found or unauthorized"}), 404
 
