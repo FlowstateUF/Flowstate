@@ -107,5 +107,6 @@ def serialize_textbook_card(info: dict) -> dict:
         "title": info.get("title"),
         "display_title": display_title(info.get("title")),
         "storage_path": info.get("storage_path"),
+        "is_starred": bool(info.get("is_starred", True)),
         **progress,
     }

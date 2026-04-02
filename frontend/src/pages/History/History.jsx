@@ -3,8 +3,12 @@ import { useNavigate } from "react-router-dom";
 import {
   Badge,
   Box,
+  Button,
   Container,
+  Divider,
   Group,
+  Menu,
+  Modal,
   Notification,
   Paper,
   Loader,
@@ -12,12 +16,13 @@ import {
   SimpleGrid,
   Stack,
   Text,
+  TextInput,
   Title,
 } from "@mantine/core";
 import NavBar from "../../components/NavBar";
 import { authFetch } from "../../utils/authFetch";
 import "./History.css";
-import { IconX, IconPhotoUp } from "@tabler/icons-react";
+import { IconDotsVertical, IconPhotoUp, IconTrash } from "@tabler/icons-react";
 
 const API_BASE = "http://localhost:5001";
 const PENDING_STORAGE_KEY = "pendingTextbooks";
@@ -257,6 +262,10 @@ export default function History() {
   const [pageError, setPageError] = useState("");
   const [toast, setToast] = useState(null);
   const [recentlyCompleted, setRecentlyCompleted] = useState({});
+  const [manageBook, setManageBook] = useState(null);
+  const [deleteBook, setDeleteBook] = useState(null);
+  const [deleteConfirmText, setDeleteConfirmText] = useState("");
+  const [renameTitle, setRenameTitle] = useState("");
   const [customCovers, setCustomCovers] = useState(() => {
     try {
       return JSON.parse(localStorage.getItem(CUSTOM_COVERS_STORAGE_KEY) || "{}");
@@ -365,6 +374,94 @@ const handleCoverUpload = (bookId, file) => {
   img.src = objectUrl;
 };
 
+  const openDeleteModal = (book) => {
+    setDeleteBook(book);
+    setDeleteConfirmText("");
+  };
+
+  const closeDeleteModal = () => {
+    setDeleteBook(null);
+    setDeleteConfirmText("");
+  };
+
+  const confirmedDeleteMatches =
+    deleteBook &&
+    deleteConfirmText.trim() === trimPdfExtension(deleteBook.title);
+
+  const removeCustomCover = (bookId) => {
+    setCustomCovers((previous) => {
+      const next = { ...previous };
+      delete next[bookId];
+      localStorage.setItem(CUSTOM_COVERS_STORAGE_KEY, JSON.stringify(next));
+      return next;
+    });
+
+    setToast({
+      color: "teal",
+      title: "Cover removed",
+      message: "The custom cover image was removed.",
+    });
+  };
+
+  const openManageModal = (book) => {
+    setManageBook(book);
+    setRenameTitle(trimPdfExtension(book.title));
+  };
+
+  const handleRenameTextbook = async () => {
+    if (!manageBook) return;
+
+    const nextTitle = renameTitle.trim();
+    if (!nextTitle) {
+      setToast({
+        color: "red",
+        title: "Name required",
+        message: "Please enter a textbook name.",
+      });
+      return;
+    }
+
+    try {
+      const response = await authFetch(`${API_BASE}/api/textbooks/${manageBook.id}/rename`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ title: nextTitle }),
+      });
+
+      const payload = await response.json().catch(() => ({}));
+      if (!response.ok) {
+        throw new Error(payload.error || "Could not rename textbook.");
+      }
+
+      setManageBook(payload);
+      setRenameTitle(trimPdfExtension(payload.title || nextTitle));
+
+      setTextbooks((previousBooks) =>
+        previousBooks.map((book) =>
+          book.id === payload.id ? { ...book, title: payload.title } : book
+        )
+      );
+
+      const nextPending = readPendingTextbooks().map((book) =>
+        book.id === payload.id ? { ...book, title: payload.title } : book
+      );
+      writePendingTextbooks(nextPending);
+
+      setToast({
+        color: "teal",
+        title: "Textbook renamed",
+        message: "The display name was updated.",
+      });
+    } catch (error) {
+      console.error("Failed to rename textbook:", error);
+      setToast({
+        color: "red",
+        title: "Rename failed",
+        message: error.message || "Could not rename this textbook.",
+      });
+    }
+  };
+
   const fetchTextbooks = useCallback(async () => {
     try {
       const response = await authFetch(`${API_BASE}/api/textbooks`);
@@ -449,6 +546,10 @@ const handleCoverUpload = (bookId, file) => {
         localStorage.setItem(CUSTOM_COVERS_STORAGE_KEY, JSON.stringify(next));
         return next;
       });
+
+      setDeleteBook(null);
+      setDeleteConfirmText("");
+      setManageBook((current) => (current?.id === bookId ? null : current));
 
       setToast({
         color: "teal",
@@ -668,6 +769,126 @@ const handleCoverUpload = (bookId, file) => {
         </div>
       )}
 
+      <Modal
+  opened={Boolean(manageBook)}
+  onClose={() => {
+    setManageBook(null);
+    setRenameTitle("");
+}}
+  title={manageBook ? `Manage ${trimPdfExtension(manageBook.title)}` : "Manage textbook"}
+  centered
+>
+  <Stack gap="md">
+    <div className="history-manageSection">
+      <Text fw={600}>Cover image</Text>
+      <Text size="sm" c="dimmed">
+        Upload a custom cover for this textbook.
+      </Text>
+
+      <label className="history-manageUploadBtn">
+        <input
+          type="file"
+          accept="image/*"
+          className="history-manageUploadInput"
+          onChange={(e) => {
+            const file = e.target.files?.[0];
+            if (manageBook) handleCoverUpload(manageBook.id, file);
+            e.target.value = "";
+          }}
+        />
+        <IconPhotoUp size={16} />
+        <span>Upload cover</span>
+      </label>
+
+      {manageBook && customCovers[manageBook.id] && (
+        <Button
+          variant="subtle"
+          color="gray"
+          onClick={() => removeCustomCover(manageBook.id)}
+          className="history-manageSecondaryBtn"
+        >
+          Remove custom cover
+        </Button>
+      )}
+    </div>
+
+    <Divider />
+
+    <div className="history-manageSection">
+      <Text fw={600}>Rename</Text>
+      <Text size="sm" c="dimmed">
+        Choose the display name shown in your library.
+      </Text>
+
+      <Group align="end" className="history-renameRow">
+        <TextInput
+          value={renameTitle}
+          onChange={(e) => setRenameTitle(e.currentTarget.value)}
+          placeholder="Textbook name"
+          className="history-renameInput"
+        />
+        <Button
+          onClick={handleRenameTextbook}
+          disabled={
+            !renameTitle.trim() ||
+            renameTitle.trim() === trimPdfExtension(manageBook?.title || "")
+          }
+        >
+          Save name
+        </Button>
+      </Group>
+    </div>
+
+    <div className="history-manageSection">
+      <Text fw={600}>Hide / archive</Text>
+      <Text size="sm" c="dimmed">
+        We can wire this next after delete and rename are working.
+      </Text>
+    </div>
+  </Stack>
+</Modal>
+
+<Modal
+  opened={Boolean(deleteBook)}
+  onClose={closeDeleteModal}
+  title="Delete textbook?"
+  centered
+>
+  <Stack gap="sm">
+    <Text size="sm">
+      Deleting{" "}
+      <strong>{deleteBook ? trimPdfExtension(deleteBook.title) : "this textbook"}</strong>{" "}
+      will remove the textbook and all related statistics, progress, and generated study content.
+      This action cannot be undone.
+    </Text>
+
+    <Text size="sm" c="dimmed">
+      To confirm, type the textbook name below.
+    </Text>
+
+    <TextInput
+      value={deleteConfirmText}
+      onChange={(e) => setDeleteConfirmText(e.currentTarget.value)}
+      placeholder={deleteBook ? trimPdfExtension(deleteBook.title) : ""}
+    />
+
+    <Group justify="flex-end" mt="sm">
+      <Button variant="default" onClick={closeDeleteModal}>
+        Cancel
+      </Button>
+      <Button
+        color="red"
+        disabled={!confirmedDeleteMatches}
+        onClick={() => {
+          if (deleteBook) handleDeleteTextbook(deleteBook.id);
+        }}
+      >
+        Delete permanently
+      </Button>
+    </Group>
+  </Stack>
+</Modal>
+
       <main className="history-page">
         <Container size="lg">
           <Stack gap="md">
@@ -738,36 +959,39 @@ const handleCoverUpload = (bookId, file) => {
                         }
                       }}
                     >
-                      <button
-                        type="button"
-                        className="history-delete-btn"
-                        onClick={(e) => {
-                          e.stopPropagation();
-                          handleDeleteTextbook(book.id);
-                        }}
-                        aria-label={`Delete ${trimPdfExtension(book.title)}`}
-                      >
-                        <IconX size={14} />
-                      </button>
+                      <Menu withinPortal position="bottom-end" shadow="md">
+                        <Menu.Target>
+                          <button
+                            type="button"
+                            className="history-menu-btn"
+                            onClick={(e) => e.stopPropagation()}
+                            aria-label={`More options for ${trimPdfExtension(book.title)}`}
+                          >
+                            <IconDotsVertical size={16} />
+                          </button>
+                        </Menu.Target>
 
-                      <label
-                        className="history-cover-upload-btn"
-                        onClick={(e) => e.stopPropagation()}
-                        aria-label={`Upload cover for ${trimPdfExtension(book.title)}`}
-                      >
-                        <input
-                          type="file"
-                          accept="image/*"
-                          className="history-cover-upload-input"
-                          onChange={(e) => {
-                            e.stopPropagation();
-                            const file = e.target.files?.[0];
-                            handleCoverUpload(book.id, file);
-                            e.target.value = "";
-                          }}
-                        />
-                        <IconPhotoUp size={16} />
-                      </label>
+                        <Menu.Dropdown onClick={(e) => e.stopPropagation()}>
+                          <Menu.Label>Textbook options</Menu.Label>
+
+                          <Menu.Item
+                            leftSection={<IconPhotoUp size={14} />}
+                            onClick={() => openManageModal(book)}
+                          >
+                            Manage
+                          </Menu.Item>
+
+                          <Menu.Divider />
+
+                          <Menu.Item
+                            color="red"
+                            leftSection={<IconTrash size={14} />}
+                            onClick={() => openDeleteModal(book)}
+                          >
+                            Delete textbook
+                          </Menu.Item>
+                        </Menu.Dropdown>
+                      </Menu>
 
                       <div
                         className={[

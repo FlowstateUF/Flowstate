@@ -47,7 +47,7 @@ def get_user_by_id(user_id) -> dict:
 
 # Textbooks 
 
-def upload_textbook_to_supabase(user_id: int, file_bytes: bytes, filename: str) -> dict:
+def upload_textbook_to_supabase(user_id: int, file_bytes: bytes, filename: str, file_hash: str) -> dict:
     storage_path = f"{user_id}/{filename}"
 
     try:
@@ -66,7 +66,8 @@ def upload_textbook_to_supabase(user_id: int, file_bytes: bytes, filename: str) 
         "title": filename,
         "storage_path": storage_path,
         "file_size": len(file_bytes),
-        "status": "processing"
+        "status": "processing",
+        "file_hash": file_hash
     }).execute()
 
     return record.data[0]
@@ -79,8 +80,13 @@ def get_textbook_info(textbook_id: str) -> dict:
     result = supabase.table("textbooks").select("*").eq("id", textbook_id).single().execute()
     return result.data
 
-def list_user_textbooks(user_id: str) -> list[dict]:
-    result = supabase.table("textbooks").select("*").eq("user_id", user_id).execute()
+def list_user_textbooks(user_id: str, include_all: bool = False) -> list[dict]:
+    query = supabase.table("textbooks").select("*").eq("user_id", user_id)
+
+    if not include_all:
+        query = query.eq("is_starred", True)
+
+    result = query.execute()
     return result.data or []
 
 def update_textbook_status(textbook_id: str, status: str, chunk_count: int = None):
@@ -105,12 +111,52 @@ def get_textbook(user_id: str, textbook_id: str):
     )
     return res
 
-def check_textbook_exists(user_id: str, filename: str):
+def rename_textbook_for_user(user_id: str, textbook_id: str, new_title: str) -> dict | None:
+    result = (
+        supabase.table("textbooks")
+        .update({"title": new_title})
+        .eq("id", textbook_id)
+        .eq("user_id", user_id)
+        .execute()
+    )
+    return result.data[0] if result.data else None
+
+def set_textbook_starred_for_user(user_id: str, textbook_id: str, is_starred: bool) -> dict | None:
+    result = (
+        supabase.table("textbooks")
+        .update({"is_starred": is_starred})
+        .eq("id", textbook_id)
+        .eq("user_id", user_id)
+        .execute()
+    )
+    return result.data[0] if result.data else None
+
+def delete_textbook_for_user(user_id: str, textbook_id: str) -> dict | None:
+    info = get_textbook_info(textbook_id)
+    if not info or str(info.get("user_id")) != str(user_id):
+        return None
+
+    storage_path = info.get("storage_path")
+
+    supabase.table("pretests").delete().eq("textbook_id", textbook_id).execute()
+    supabase.table("chunks").delete().eq("textbook_id", textbook_id).execute()
+    supabase.table("chapters").delete().eq("textbook_id", textbook_id).execute()
+    supabase.table("textbooks").delete().eq("id", textbook_id).eq("user_id", user_id).execute()
+
+    if storage_path:
+        try:
+            supabase.storage.from_("textbooks").remove([storage_path])
+        except Exception:
+            pass
+
+    return info
+
+def check_textbook_exists(user_id: str, file_hash: str):
     res = (
         supabase.table("textbooks")
         .select("id, status, title")
         .eq("user_id", user_id)
-        .eq("title", filename)
+        .eq("file_hash", file_hash)
         .limit(1)
         .execute()
     )
