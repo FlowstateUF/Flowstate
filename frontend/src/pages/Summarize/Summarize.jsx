@@ -198,7 +198,7 @@ export default function Summarize() {
         <Paper withBorder radius="lg" p="xl" className="summarize-card">
           <Stack gap="sm">
             <Text fw={800} className="summarize-chapter-title">
-              {chapter_title || `Chapter ${chapter_title || ""}`}
+              {chapter_title || "Chapter"}
             </Text>
 
             {error ? (

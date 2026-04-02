@@ -227,14 +227,20 @@ CRITICAL RULES:
 - Use ONLY information from the provided context below
 - If the context doesn't contain enough information, respond with: {{"error": "Insufficient context"}}
 - Do NOT make up information or use outside knowledge
-- Each flashcard must be grounded explicitly in the context and include page citations
+- Every flashcard must be grounded explicitly in the context
 
 FLASHCARD RULES:
-- Generate EXACTLY {num_cards} flashcards
+- Generate up to {num_cards} high-quality flashcards (fewer is acceptable if context is limited)
 - Each flashcard must test ONE atomic concept only (no multi-part cards)
-- Front must be answerable in ONE sentence
-- Back must be no longer than 3 sentences
+- Questions must be clear, specific, and unambiguous
+- Answers must be concise (1–3 sentences max)
+- Prefer conceptual understanding over memorization
+- Avoid repeating the same idea across multiple cards
 - Do NOT create scenario-based cards (save scenarios for Apply/Analyze quizzes)
+
+CITATIONS:
+- Include a citation using the page number if available (e.g., "Page 12")
+- Do not fabricate citations
 
 Context:
 {context}
@@ -243,11 +249,10 @@ Return ONLY valid JSON in this exact format:
 {{
   "flashcards": [
     {{
-      "front": "Question or prompt (one concept)",
-      "back": "Answer (<= 3 sentences)",
-      "citation": "Specific reference to source (e.g., 'Page 12 Paragraph 3')"
+      "front": "Clear question or prompt",
+      "back": "Concise answer",
+      "citation": "Page X"
     }}
-  ]
 }}
 """
 

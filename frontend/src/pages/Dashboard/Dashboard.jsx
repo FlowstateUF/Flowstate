@@ -201,11 +201,9 @@ export default function Dashboard() {
                           alert("Select textbook and chapter first");
                           return;
                         }
-
                         const chapterObj = chapters.find(
                           (ch) => ch.value === selectedChapter
                         );
-
                         navigate("/Summarize", {
                           state: {
                             textbook_id: selectedTextbook,
@@ -221,7 +219,19 @@ export default function Dashboard() {
                       variant="light"
                       radius="xl"
                       fullWidth
-                      onClick={() => navigate("/flash")}
+                      onClick={() => {
+                        if (!selectedTextbook || !selectedChapter) {
+                          alert("Select textbook and chapter first");
+                          return;
+                        }
+                        const chapterObj = chapters.find((ch) => ch.value === selectedChapter);
+                        navigate("/flash", {
+                          state: {
+                            textbook_id: selectedTextbook,
+                            chapter_title: chapterObj?.label,
+                          },
+                        });
+                      }}
                     >
                       Flashcards
                     </Button>

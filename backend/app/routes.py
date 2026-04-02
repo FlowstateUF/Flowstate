@@ -405,3 +405,61 @@ def register_routes(app):
             **result
         }), 200
 
+
+    @app.post("/api/generate/flashcards")
+    @jwt_required()
+    def generate_flashcards():
+        user_id = get_jwt_identity()
+        data = request.get_json(silent=True) or {}
+
+        textbook_id = data.get("textbook_id")
+        chapter_title = (data.get("chapter_title") or "").strip()
+        num_cards = int(data.get("num_cards") or 5)
+
+        if not textbook_id:
+            return jsonify({"error": "textbook_id required"}), 400
+
+        if not chapter_title:
+            return jsonify({"error": "chapter_title required"}), 400
+
+        if num_cards < 1 or num_cards > 15:
+            return jsonify({"error": "num_cards must be between 1 and 15"}), 400
+
+        owned = get_textbook(user_id, textbook_id)
+        if not owned.data:
+            return jsonify({"error": "Textbook not found or unauthorized"}), 404
+
+        points = fetch_all_chunks(
+            textbook_id=textbook_id,
+            chapter_title=chapter_title,
+            user_id=user_id
+        )
+
+        if not points:
+            return jsonify({"error": "No chunks found for that chapter"}), 400
+
+        rows = []
+        for p in points:
+            payload = p.payload or {}
+            rows.append({
+                "content": payload.get("text") or payload.get("content") or "",
+                "page_number": payload.get("page_number") or payload.get("page_start"),
+            })
+
+        context = _build_context_from_chunks(rows, max_chars=14000)
+        if not context.strip():
+            return jsonify({"error": "Empty context after filtering"}), 400
+
+        llm = LLMService(api_key=settings.NAVIGATOR_API_KEY)
+        result = llm.generate_flashcards(
+            context=context,
+            num_cards=num_cards,
+            temp=0.3
+        )
+
+        return jsonify({
+            "status": "success",
+            "textbook_id": textbook_id,
+            "chapter_title": chapter_title,
+            "flashcards": result.get("flashcards", [])
+        }), 200

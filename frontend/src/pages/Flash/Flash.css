@@ -88,6 +88,10 @@
   letter-spacing: 0.2px;
 }
 
+.flash-return {
+  margin-top: 20px;
+}
+
 /* Responsive */
 @media (max-width: 900px) {
   .flashpage {
