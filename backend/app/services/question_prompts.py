@@ -156,44 +156,64 @@ QUESTION_TYPES = {
 # summary
 SUMMARY_PROMPT = """You are an expert academic summarizer.
 
-CRITICAL RULES:
-- Use ONLY information from the provided context below
-- If the context doesn't contain enough information, respond with: {{"error": "Insufficient context"}}
-- Do NOT make up information or use outside knowledge
-- Do NOT add new examples, advice, or interpretations not present in the context
-- Include citations for each bullet group
-- Use ONLY the chapter specifed: 
+Your task is to produce a clear, structured summary of the provided textbook context.
 
-SUMMARY RULES:
-- Write a structured summary with:
-  1) Key Concepts (5 to 10 bullets)
-  2) Key Terms (5 to 15 items; each with a short definition)
-  3) Relationships (3 to 8 bullets describing connections/contrasts explicitly stated)
-- Keep bullets concise and factual.
+GENERAL RULES:
+- Use ONLY the provided context. Do not use outside knowledge.
+- Do NOT invent or assume missing information.
+- If the context is insufficient, return: {{"error": "Insufficient context"}}
+- Be precise, concise, and factual.
+- Avoid repetition.
+
+STRUCTURE:
+
+1) Key Concepts
+- Extract the most important ideas from the text.
+- Each bullet should capture one core idea.
+- Focus on understanding, not examples.
+- Include a citation (Page X).
+
+2) Key Terms
+- Extract ONLY terms that are clearly defined or explained in the context.
+- Each term must include a short definition based strictly on the text.
+- Do NOT guess or infer definitions.
+- If no clear terms exist, return an empty list [].
+
+3) Relationships
+- Describe important relationships explicitly stated in the text.
+- Examples:
+  - cause → effect
+  - comparison or contrast
+  - how one concept depends on another
+- Do NOT invent relationships.
+
+CITATIONS:
+- Every item must include a citation using the page number if available (e.g., "Page 27").
 
 Context:
 {context}
 
 Return ONLY valid JSON in this exact format:
+
 {{
   "summary": {{
     "key_concepts": [
       {{
-        "bullet": "Concise key concept",
-        "citation": "Page X Paragraph Y"
+        "bullet": "Core idea",
+        "citation": "Page X"
       }}
     ],
     "key_terms": [
       {{
         "term": "Term",
-        "definition": "Short definition grounded in the context",
-        "citation": "Page X Paragraph Y"
+        "definition": "Definition from the text",
+        "citation": "Page X"
       }}
     ],
     "relationships": [
       {{
-        "bullet": "Relationship/contrast/cause-effect explicitly described in the context",
-        "citation": "Page X Paragraph Y"
+        "bullet": "Explicit relationship from the text",
+        "citation": "Page X"
       }}
     ]
   }}
@@ -207,14 +227,22 @@ CRITICAL RULES:
 - Use ONLY information from the provided context below
 - If the context doesn't contain enough information, respond with: {{"error": "Insufficient context"}}
 - Do NOT make up information or use outside knowledge
-- Each flashcard must be grounded explicitly in the context and include page citations
+- Every flashcard must be grounded explicitly in the context
 
 FLASHCARD RULES:
-- Generate EXACTLY {num_cards} flashcards
+- Generate up to {num_cards} high-quality flashcards (fewer is acceptable if context is limited)
 - Each flashcard must test ONE atomic concept only (no multi-part cards)
-- Front must be answerable in ONE sentence
-- Back must be no longer than 3 sentences
+- Questions must be clear, specific, and unambiguous
+- Answers must be concise (1–3 sentences max)
+- Prefer conceptual understanding over memorization
+- Prefer questions that test definitions, relationships, or key ideas
+- Avoid trivial or overly obvious questions
+- Avoid repeating the same idea across multiple cards
 - Do NOT create scenario-based cards (save scenarios for Apply/Analyze quizzes)
+
+CITATIONS:
+- Include a citation using the page number if available (e.g., "Page 12")
+- Do not fabricate citations
 
 Context:
 {context}
@@ -223,11 +251,10 @@ Return ONLY valid JSON in this exact format:
 {{
   "flashcards": [
     {{
-      "front": "Question or prompt (one concept)",
-      "back": "Answer (<= 3 sentences)",
-      "citation": "Specific reference to source (e.g., 'Page 12 Paragraph 3')"
+      "front": "Clear question or prompt",
+      "back": "Concise answer",
+      "citation": "Page X"
     }}
-  ]
 }}
 """
 

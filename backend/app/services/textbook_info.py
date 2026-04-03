@@ -14,9 +14,16 @@ def build_textbook_progress(info: dict) -> dict:
     textbook_id = info["id"]
     toc = get_toc(textbook_id)
     chapter_count = len(toc)
-    pretests_ready = sum(
-        1 for ch in toc if check_pretest_exists(textbook_id, ch["id"])
-    )
+    # pretests_ready = sum(
+    #     1 for ch in toc if check_pretest_exists(textbook_id, ch["id"])
+    # )
+    pretests_ready = 0
+    for ch in toc:
+        try:
+            if check_pretest_exists(textbook_id, ch["id"]):
+                pretests_ready += 1
+        except Exception as e:
+            print(f"[textbook_progress] check_pretest_exists failed for chapter {ch['id']}: {e}")
 
     status = (info.get("status") or "").strip()
     page_count = int(info.get("page_count") or 0)

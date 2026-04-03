@@ -31,9 +31,10 @@ from app.services.supabase_service import (
 
 from app.services.textbook_service import extract_toc
 from app.services.vector_service import (
-    get_collection_info, 
+    get_collection_info,
     retrieve_context,
-    delete_textbook_chunks
+    fetch_all_chunks,
+    delete_textbook_chunks,
 )
 
 from app.services.textbook_info import(
@@ -219,6 +220,7 @@ def register_routes(app):
 
         try:
             process_textbook.delay(user_id, textbook_id, file_bytes)
+            # process_textbook(user_id, textbook_id, file_bytes)
 
         except Exception as e:
             return jsonify({"error": "Failed to process textbook", "details": str(e)}), 500
@@ -307,6 +309,23 @@ def register_routes(app):
             "message": "Textbook deleted successfully",
         }), 200
    
+   
+    @app.get("/api/textbooks/<textbook_id>/chapters")
+    @jwt_required()
+    def get_textbook_chapters(textbook_id):
+        user_id = get_jwt_identity()
+
+        owned = get_textbook(user_id, textbook_id)
+        if not owned.data:
+            return jsonify({"error": "Textbook not found or unauthorized"}), 404
+
+        chapters = get_toc(textbook_id) or []
+
+        return jsonify({
+            "chapters": chapters
+        }), 200
+
+
     # ** NaviGator Routes **
 
     # test this by using curl '-X POST http://127.0.0.1:5001/api/test-recall' in the terminal after running the Flask app
@@ -347,65 +366,174 @@ def register_routes(app):
         data = request.get_json(silent=True) or {}
 
         textbook_id = data.get("textbook_id")
-        topic = (data.get("topic") or "").strip()
+        chapter_title = (data.get("chapter_title") or "").strip()
 
         if not textbook_id:
             return jsonify({"error": "textbook_id required"}), 400
 
-        if not get_textbook(user_id, textbook_id).data:
-            return jsonify({"error": "Textbook not found or unauthorized"}), 404
+        if not chapter_title:
+            return jsonify({"error": "chapter_title required"}), 400
 
-        retrieval_query = topic if topic else "main ideas key terms"
-        context = retrieve_context(user_id, textbook_id, retrieval_query, top_k=14)
-        if not context.strip():
-            return jsonify({"error": "Insufficient context"}), 400
-
-        llm = LLMService(api_key=settings.NAVIGATOR_API_KEY)
-
-        result = llm.generate_summary(context=context, temp=0.3)
-        return jsonify({"status": "success", **result}), 200
-
-    
-    # Add inside register_routes(app):
-    @app.post("/api/test-summary-chapter")
-    @jwt_required()
-    def test_summary_chapter():
-        user_id = get_jwt_identity()
-        data = request.get_json(silent=True) or {}
-
-        textbook_id = data.get("textbook_id")
-        chapter_id = data.get("chapter_id")
-        temp = float(data.get("temp", 0.3))
-
-        if not textbook_id or not chapter_id:
-            return jsonify({"error": "textbook_id and chapter_id required"}), 400
-
-        # ownership check like your other routes
         owned = get_textbook(user_id, textbook_id)
         if not owned.data:
             return jsonify({"error": "Textbook not found or unauthorized"}), 404
 
-        rows = fetch_chapter_chunks(textbook_id, chapter_id, limit=80)
-        if not rows:
-            return jsonify({"error": "No chunks found for that chapter_id"}), 400
+        points = fetch_all_chunks(textbook_id=textbook_id, chapter_title=chapter_title, user_id=user_id)
+        if not points:
+            return jsonify({"error": "No chunks found for that chapter"}), 400
+
+        rows = []
+        for p in points:
+            payload = p.payload or {}
+            rows.append({
+                "content": payload.get("text") or payload.get("content") or "",
+                "page_number": payload.get("page_number") or payload.get("page_start"),
+            })
 
         context = _build_context_from_chunks(rows, max_chars=14000)
         if not context.strip():
             return jsonify({"error": "Empty context after filtering"}), 400
 
         llm = LLMService(api_key=settings.NAVIGATOR_API_KEY)
-        result = llm.generate_summary(context=context, temp=temp)
+        result = llm.generate_summary(context=context, temp=0.3)
 
         return jsonify({
             "status": "success",
-            "chapter_id": chapter_id,
+            "textbook_id": textbook_id,
+            "chapter_title": chapter_title,
             "chunks_used": len(rows),
-            "context_preview": context[:800],
             **result
         }), 200
 
-    @app.get("/api/debug/qdrant-vectors")
-    def debug_qdrant_vectors():
-        info = get_collection_info("chunks")
-        return jsonify(str(info.config.params.vectors))
+
+    @app.post("/api/generate/flashcards")
+    @jwt_required()
+    def generate_flashcards():
+        user_id = get_jwt_identity()
+        data = request.get_json(silent=True) or {}
+
+        textbook_id = data.get("textbook_id")
+        chapter_title = (data.get("chapter_title") or "").strip()
+        num_cards = int(data.get("num_cards") or 5)
+
+        if not textbook_id:
+            return jsonify({"error": "textbook_id required"}), 400
+
+        if not chapter_title:
+            return jsonify({"error": "chapter_title required"}), 400
+
+        if num_cards < 1 or num_cards > 15:
+            return jsonify({"error": "num_cards must be between 1 and 15"}), 400
+
+        owned = get_textbook(user_id, textbook_id)
+        if not owned.data:
+            return jsonify({"error": "Textbook not found or unauthorized"}), 404
+
+        points = fetch_all_chunks(
+            textbook_id=textbook_id,
+            chapter_title=chapter_title,
+            user_id=user_id
+        )
+
+        if not points:
+            return jsonify({"error": "No chunks found for that chapter"}), 400
+
+        rows = []
+        for p in points:
+            payload = p.payload or {}
+            rows.append({
+                "content": payload.get("text") or payload.get("content") or "",
+                "page_number": payload.get("page_number") or payload.get("page_start"),
+            })
+
+        context = _build_context_from_chunks(rows, max_chars=14000)
+        if not context.strip():
+            return jsonify({"error": "Empty context after filtering"}), 400
+
+        llm = LLMService(api_key=settings.NAVIGATOR_API_KEY)
+        result = llm.generate_flashcards(
+            context=context,
+            num_cards=num_cards,
+            temp=0.3
+        )
+
+        return jsonify({
+            "status": "success",
+            "textbook_id": textbook_id,
+            "chapter_title": chapter_title,
+            "flashcards": result.get("flashcards", [])
+        }), 200
     
+
+    @app.post("/api/generate/quiz")
+    @jwt_required()
+    def generate_quiz():
+        user_id = get_jwt_identity()
+        data = request.get_json(silent=True) or {}
+
+        textbook_id = data.get("textbook_id")
+        chapter_title = (data.get("chapter_title") or "").strip()
+        difficulty = str(data.get("difficulty") or "1")
+        num_questions = int(data.get("num_questions") or 5)
+
+        if not textbook_id:
+            return jsonify({"error": "textbook_id required"}), 400
+
+        if not chapter_title:
+            return jsonify({"error": "chapter_title required"}), 400
+
+        difficulty_map = {
+            "1": "recall",
+            "2": "understand",
+            "3": "apply",
+            "4": "analyze",
+            "recall": "recall",
+            "understand": "understand",
+            "apply": "apply",
+            "analyze": "analyze",
+        }
+
+        question_type = difficulty_map.get(difficulty)
+        if not question_type:
+            return jsonify({"error": "difficulty must be 1-4 or a valid type"}), 400
+
+        owned = get_textbook(user_id, textbook_id)
+        if not owned.data:
+            return jsonify({"error": "Textbook not found or unauthorized"}), 404
+
+        points = fetch_all_chunks(
+            textbook_id=textbook_id,
+            chapter_title=chapter_title,
+            user_id=user_id
+        )
+
+        if not points:
+            return jsonify({"error": "No chunks found for that chapter"}), 400
+
+        rows = []
+        for p in points:
+            payload = p.payload or {}
+            rows.append({
+                "content": payload.get("text") or payload.get("content") or "",
+                "page_number": payload.get("page_number") or payload.get("page_start"),
+            })
+
+        context = _build_context_from_chunks(rows, max_chars=14000)
+        if not context.strip():
+            return jsonify({"error": "Empty context after filtering"}), 400
+
+        llm = LLMService(api_key=settings.NAVIGATOR_API_KEY)
+
+        result = llm.generate_quiz(
+            context=context,
+            question_type=question_type,
+            num_questions=num_questions,
+            temp=0.3
+        )
+
+        return jsonify({
+            "status": "success",
+            "difficulty": difficulty,
+            "question_type": question_type,
+            "questions": result["questions"]
+        }), 200

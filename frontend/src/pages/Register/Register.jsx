@@ -33,7 +33,7 @@ export default function Register() {
 
     try {
       // send POST request to Flask backend
-      const res = await fetch("http://localhost:5001/api/register", {
+      const res = await authFetch("http://localhost:5001/api/register", {
         method: "POST",
         headers: {
           "Content-Type": "application/json"

@@ -27,7 +27,14 @@ export default function QuizResults() {
     );
   }
 
-  const { score, total, responses } = state;
+  const {
+    score,
+    total,
+    responses,
+    textbook_id,
+    chapter_title,
+    difficulty,
+  } = location.state || {};
 
   return (
     <main className="quiz-results-page">
@@ -65,7 +72,20 @@ export default function QuizResults() {
           </Stack>
 
           <Group justify="flex-end" mt="lg">
-            <Button variant="default" onClick={() => navigate("/quiz")}>
+            <Button
+              onClick={() =>
+                navigate("/quiz", {
+                  state: {
+                    score,
+                    total,
+                    responses,
+                    textbook_id,
+                    chapter_title,
+                    difficulty,
+                  },
+                })
+              }
+            >
               Retake Quiz
             </Button>
             <Button onClick={() => navigate("/dashboard")}>Go to Dashboard</Button>

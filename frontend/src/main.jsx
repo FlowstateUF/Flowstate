@@ -13,7 +13,7 @@ import Test from './pages/Test.jsx'
 import About from './pages/About/About.jsx'
 import Stats from "./pages/stats/stats.jsx";
 import History from "./pages/History/History.jsx";
-import Flash from "./pages/flash/flash.jsx";
+import Flash from "./pages/Flash/Flash.jsx";
 import Quiz from "./pages/Quiz/Quiz.jsx";
 import QuizResults from "./pages/QuizResults/QuizResults.jsx";
 import Summarize from "./pages/Summarize/Summarize.jsx";

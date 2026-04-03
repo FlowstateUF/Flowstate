@@ -1,4 +1,4 @@
-import { useMemo, useState } from "react";
+import { useState, useEffect } from "react";
 import {
   Container,
   Paper,
@@ -12,84 +12,25 @@ import {
   ActionIcon,
 } from "@mantine/core";
 import { IconInfoCircle, IconHelpCircle } from "@tabler/icons-react";
-import { useNavigate } from "react-router-dom";
+import { useNavigate, useLocation } from "react-router-dom";
 import "./Quiz.css";
 
 export default function Quiz() {
   const navigate = useNavigate();
+  const location = useLocation();
+  const { textbook_id, chapter_title, difficulty } = location.state || {};
 
-  const questions = useMemo(
-    () => [
-      {
-        title: "Question 1",
-        prompt:
-          "Dummy question text: answer question one.",
-        choices: [
-          "Dummy answer A: one.",
-          "Dummy answer B: two.",
-          "Dummy answer C: three.",
-          "Dummy answer D: four.",
-        ],
-        correctIndex: 0,
-      },
-      {
-        title: "Question 2",
-        prompt:
-          "Dummy question text: answer question two",
-        choices: [
-          "Dummy answer A: IP addresses.",
-          "Dummy answer B: HTTP requests automatically.",
-          "Dummy answer C: download.",
-          "Dummy answer D: routers.",
-        ],
-        correctIndex: 0,
-      },
-      {
-        title: "Question 3",
-        prompt:
-          "Dummy question text: answer question three",
-        choices: [
-          "Dummy answer A: HTTP request.",
-          "Dummy answer B: browser cache.",
-          "Dummy answer C: server.",
-          "Dummy answer D: CDN.",
-        ],
-        correctIndex: 0,
-      },
-      {
-        title: "Question 4",
-        prompt:
-          "Dummy question text: answer question four.",
-        choices: [
-          "Dummy answer A: Serving content.",
-          "Dummy answer B: Increasing packet.",
-          "Dummy answer C: Disabling images.",
-          "Dummy answer D: Forcing every request.",
-        ],
-        correctIndex: 0,
-      },
-      {
-        title: "Question 5",
-        prompt:
-          "Dummy question text: answer question five",
-        choices: [
-          "Dummy answer A: Forwards packets.",
-          "Dummy answer B: Converts analog.",
-          "Dummy answer C: Frames CRC.",
-          "Dummy answer D: Renders HTML.",
-        ],
-        correctIndex: 0,
-      },
-    ],
-    []
-  );
+  const API_BASE = "http://127.0.0.1:5001";
 
+  const [questions, setQuestions] = useState([]);
   const [index, setIndex] = useState(0);
   const [selectedByIndex, setSelectedByIndex] = useState({}); // { [qIndex]: choiceIndex }
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState("");
 
   const total = questions.length;
   const current = questions[index];
-  const progressValue = ((index + 1) / total) * 100;
+  const progressValue = total > 0 ? ((index + 1) / total) * 100 : 0;
 
   const selectedChoice = selectedByIndex[index];
 
@@ -101,10 +42,88 @@ export default function Quiz() {
   };
 
   const answeredCount = Object.keys(selectedByIndex).length;
-  const allAnswered = answeredCount === total;
+  const allAnswered = total > 0 && answeredCount === total;
+
+  async function fetchQuiz() {
+    if (!textbook_id || !chapter_title || !difficulty) {
+      setError("Missing textbook, chapter, or difficulty. Go back and select them first.");
+      return;
+    }
+
+    const token = localStorage.getItem("access_token");
+    if (!token) {
+      setError("No access token found. Please log in again.");
+      return;
+    }
+
+    setLoading(true);
+    setError("");
+
+    try {
+      const res = await fetch(`${API_BASE}/api/generate/quiz`, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${token}`,
+        },
+        body: JSON.stringify({
+          textbook_id,
+          chapter_title,
+          difficulty,
+          num_questions: 5,
+        }),
+      });
+
+      const raw = await res.text();
+      let data = {};
+
+      try {
+        data = raw ? JSON.parse(raw) : {};
+      } catch {
+        data = { error: raw || `Non-JSON response (${res.status})` };
+      }
+
+      if (!res.ok) {
+        setError(data?.error || `Request failed (${res.status})`);
+        return;
+      }
+
+      const fetchedQuestions = data.questions || [];
+
+      if (!Array.isArray(fetchedQuestions) || fetchedQuestions.length === 0) {
+        setError("Backend returned no quiz questions.");
+        setQuestions([]);
+        return;
+      }
+
+      const normalized = fetchedQuestions.map((q, qIndex) => ({
+        title: `Question ${qIndex + 1}`,
+        prompt: q.question,
+        choices: [
+          q.choices?.A ?? "",
+          q.choices?.B ?? "",
+          q.choices?.C ?? "",
+          q.choices?.D ?? "",
+        ],
+        correctIndex: ["A", "B", "C", "D"].indexOf(q.correct_answer),
+      }));
+
+      setQuestions(normalized);
+      setIndex(0);
+      setSelectedByIndex({});
+    } catch (e) {
+      setError(String(e));
+    } finally {
+      setLoading(false);
+    }
+  }
+
+  useEffect(() => {
+    fetchQuiz();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [textbook_id, chapter_title, difficulty]);
 
   const handleSubmit = () => {
-
     const responses = questions.map((q, qIndex) => {
       const chosen = selectedByIndex[qIndex];
       return {
@@ -112,7 +131,7 @@ export default function Quiz() {
         title: q.title,
         prompt: q.prompt,
         selectedIndex: chosen,
-        selectedText: q.choices[chosen],
+        selectedText: chosen != null ? q.choices[chosen] : null,
         correctIndex: q.correctIndex,
         correctText: q.choices[q.correctIndex],
         isCorrect: chosen === q.correctIndex,
@@ -124,9 +143,15 @@ export default function Quiz() {
     // Log user responses
     console.log("QUIZ SUBMISSION:", { score, total, responses });
 
-
     navigate("/quiz/results", {
-      state: { score, total, responses },
+      state: {
+        score,
+        total,
+        responses,
+        textbook_id,
+        chapter_title,
+        difficulty,
+      },
     });
   };
 
@@ -147,67 +172,101 @@ export default function Quiz() {
           </Group>
         </Group>
 
-        {}
-        <Group align="center" gap="md" className="quiz-progress-row">
-          <Text className="quiz-progress-label">Progress</Text>
-          <Progress value={progressValue} className="quiz-progress" radius="xl" />
-        </Group>
-
-        {}
-        <Paper withBorder radius="lg" p="xl" className="quiz-card">
-          <Stack gap="sm">
-            <Text fw={700} className="quiz-question-title">
-              {current.title}
-            </Text>
-            <Text className="quiz-question-text">{current.prompt}</Text>
-          </Stack>
-        </Paper>
-
-        {}
-        <SimpleGrid cols={{ base: 1, sm: 2 }} spacing="lg" className="quiz-answers">
-          {current.choices.map((choice, choiceIdx) => {
-            const isSelected = selectedChoice === choiceIdx;
-
-            return (
-              <button
-                key={choiceIdx}
-                type="button"
-                className={`quiz-choice ${isSelected ? "selected" : ""}`}
-                onClick={() => selectChoice(choiceIdx)}
-              >
-                <Text className="quiz-choice-text">{choice}</Text>
-              </button>
-            );
-          })}
-        </SimpleGrid>
-
-        {/* Nav buttons */}
-        <Group justify="space-between" className="quiz-nav">
-          <Button variant="default" onClick={goPrev} disabled={index === 0}>
-            Prev
-          </Button>
-
-          <Text className="quiz-counter">
-            {index + 1} / {total} (answered {answeredCount}/{total})
+        {chapter_title ? (
+          <Text c="dimmed" mb="sm">
+            {chapter_title}
           </Text>
+        ) : null}
 
-          <Button onClick={goNext} disabled={index === total - 1}>
-            Next
-          </Button>
-        </Group>
+        {/* Loading / error / empty states */}
+        {error ? (
+          <Paper withBorder radius="lg" p="xl" className="quiz-card">
+            <Text c="red">{error}</Text>
+          </Paper>
+        ) : loading ? (
+          <Paper withBorder radius="lg" p="xl" className="quiz-card">
+            <Text>Generating quiz…</Text>
+          </Paper>
+        ) : total === 0 ? (
+          <Paper withBorder radius="lg" p="xl" className="quiz-card">
+            <Text>No quiz questions yet.</Text>
+          </Paper>
+        ) : (
+          <>
+            {/* Progress */}
+            <Group align="center" gap="md" className="quiz-progress-row">
+              <Text className="quiz-progress-label">Progress</Text>
+              <Progress value={progressValue} className="quiz-progress" radius="xl" />
+            </Group>
 
-        {}
-        <Group justify="flex-end" className="quiz-submit-row">
-          <Button onClick={handleSubmit} disabled={!allAnswered}>
-            Submit Quiz
-          </Button>
-        </Group>
+            {/* Question card */}
+            <Paper withBorder radius="lg" p="xl" className="quiz-card">
+              <Stack gap="sm">
+                <Text fw={700} className="quiz-question-title">
+                  {current.title}
+                </Text>
+                <Text className="quiz-question-text">{current.prompt}</Text>
+              </Stack>
+            </Paper>
 
-        {!allAnswered && (
-          <Text className="quiz-hint" ta="right">
-            Answer all questions to submit.
-          </Text>
+            {/* Answer choices */}
+            <SimpleGrid cols={{ base: 1, sm: 2 }} spacing="lg" className="quiz-answers">
+              {current.choices.map((choice, choiceIdx) => {
+                const isSelected = selectedChoice === choiceIdx;
+
+                return (
+                  <button
+                    key={choiceIdx}
+                    type="button"
+                    className={`quiz-choice ${isSelected ? "selected" : ""}`}
+                    onClick={() => selectChoice(choiceIdx)}
+                  >
+                    <Text className="quiz-choice-text">{choice}</Text>
+                  </button>
+                );
+              })}
+            </SimpleGrid>
+
+            {/* Nav buttons */}
+            <Group justify="space-between" className="quiz-nav">
+              <Button variant="default" onClick={goPrev} disabled={index === 0}>
+                Prev
+              </Button>
+
+              <Text className="quiz-counter">
+                {index + 1} / {total} (answered {answeredCount}/{total})
+              </Text>
+
+              <Button onClick={goNext} disabled={index === total - 1}>
+                Next
+              </Button>
+            </Group>
+
+            {/* Submit */}
+            <Group justify="flex-end" className="quiz-submit-row">
+              <Button onClick={handleSubmit} disabled={!allAnswered}>
+                Submit Quiz
+              </Button>
+            </Group>
+
+            {!allAnswered && (
+              <Text className="quiz-hint" ta="right">
+                Answer all questions to submit.
+              </Text>
+            )}
+
+            <Group justify="flex-end" mt="md">
+              <Button variant="light" onClick={fetchQuiz} disabled={loading}>
+                Regenerate
+              </Button>
+            </Group>
+          </>
         )}
+        <Group justify="flex-end" className="flash-return">
+            <Button variant="default" onClick={() => navigate("/dashboard")}>
+              Return to Dashboard
+            </Button>
+          </Group>
       </Container>
     </main>
   );

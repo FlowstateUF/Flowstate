@@ -15,12 +15,115 @@ import {
   Badge,
 } from "@mantine/core";
 import { useNavigate } from "react-router-dom";
+import { useState, useEffect } from "react";
 
 import NavBar from "../../components/NavBar";
 import "./Dashboard.css";
 
 export default function Dashboard() {
   const navigate = useNavigate();
+
+  const API_BASE = "http://127.0.0.1:5001";
+
+  const [selectedTextbook, setSelectedTextbook] = useState(null);
+  const [selectedChapter, setSelectedChapter] = useState(null);
+  const [selectedDifficulty, setSelectedDifficulty] = useState("1");
+
+  const [textbooks, setTextbooks] = useState([]);
+  const [chapters, setChapters] = useState([]);
+
+  // load textbooks on page load
+  useEffect(() => {
+    async function loadTextbooks() {
+      const token = localStorage.getItem("access_token");
+      if (!token) return;
+
+      try {
+        const res = await fetch(`${API_BASE}/api/textbooks`, {
+          headers: {
+            Authorization: `Bearer ${token}`,
+          },
+        });
+
+        const data = await res.json();
+
+        if (!res.ok) {
+          console.error(data.error || "Failed to load textbooks");
+          return;
+        }
+
+        const options = (data.textbooks || []).map((book) => ({
+          value: book.id,
+          label: book.display_title || book.title || "Untitled textbook",
+        }));
+
+        setTextbooks(options);
+
+        // optional: auto-select first textbook
+        if (options.length > 0) {
+          setSelectedTextbook(options[0].value);
+        }
+      } catch (e) {
+        console.error("Failed to load textbooks:", e);
+      }
+    }
+
+    loadTextbooks();
+  }, []);
+
+  // load chapters whenever textbook changes
+  useEffect(() => {
+    async function loadChapters() {
+      if (!selectedTextbook) {
+        setChapters([]);
+        setSelectedChapter(null);
+        return;
+      }
+
+      const token = localStorage.getItem("access_token");
+      if (!token) return;
+
+      try {
+        const res = await fetch(
+          `${API_BASE}/api/textbooks/${selectedTextbook}/chapters`,
+          {
+            headers: {
+              Authorization: `Bearer ${token}`,
+            },
+          }
+        );
+
+        const data = await res.json();
+
+        if (!res.ok) {
+          console.error(data.error || "Failed to load chapters");
+          setChapters([]);
+          setSelectedChapter(null);
+          return;
+        }
+
+        const options = (data.chapters || []).map((ch) => ({
+          value: ch.id,
+          label: ch.title,
+        }));
+
+        setChapters(options);
+
+        // reset selected chapter when textbook changes
+        if (options.length > 0) {
+          setSelectedChapter(options[0].value);
+        } else {
+          setSelectedChapter(null);
+        }
+      } catch (e) {
+        console.error("Failed to load chapters:", e);
+        setChapters([]);
+        setSelectedChapter(null);
+      }
+    }
+
+    loadChapters();
+  }, [selectedTextbook]);
 
   return (
     <>
@@ -54,16 +157,9 @@ export default function Dashboard() {
                     <Select
                       label="Textbook"
                       placeholder="Select a textbook"
-                      data={[
-                        { value: "bio101", label: "BIO101 — Intro Biology" },
-                        { value: "chem2045", label: "CHM2045 — General Chemistry" },
-                        { value: "cop4600", label: "COP4600 — Operating Systems" },
-                        { value: "cis4301", label: "CIS4301 — Database Systems" },
-                      ]}
-                      defaultValue="bio101"
-                      searchable
-                      className="dashboard-textbook-select"
-                      comboboxProps={{ withinPortal: true }}
+                      data={textbooks}
+                      value={selectedTextbook}
+                      onChange={setSelectedTextbook}
                     />
 
                     <Text c="dimmed" size="sm" mt={6}>
@@ -85,19 +181,44 @@ export default function Dashboard() {
                   <SimpleGrid cols={2} spacing="sm">
                     <Select
                       label="Chapters"
-                      placeholder="3"
-                      data={["1", "2", "3", "4", "5"]}
+                      placeholder="Select chapter"
+                      data={chapters}
+                      value={selectedChapter}
+                      onChange={setSelectedChapter}
                     />
                     <Select
                       label="Difficulty"
-                      placeholder="5"
-                      data={["1", "2", "3", "4", "5"]}
+                      data={[
+                        { value: "1", label: "1 - Recall" },
+                        { value: "2", label: "2 - Understand" },
+                        { value: "3", label: "3 - Apply" },
+                        { value: "4", label: "4 - Analyze" },
+                      ]}
+                      value={selectedDifficulty}
+                      onChange={setSelectedDifficulty}
                     />
                   </SimpleGrid>
 
                   <Group gap="sm" className="dashboard-actions">
-                    <Button radius="xl" fullWidth
-                    onClick={() => navigate("/Summarize")}>
+                    <Button
+                      radius="xl"
+                      fullWidth
+                      onClick={() => {
+                        if (!selectedTextbook || !selectedChapter) {
+                          alert("Select textbook and chapter first");
+                          return;
+                        }
+                        const chapterObj = chapters.find(
+                          (ch) => ch.value === selectedChapter
+                        );
+                        navigate("/Summarize", {
+                          state: {
+                            textbook_id: selectedTextbook,
+                            chapter_title: chapterObj?.label,
+                          },
+                        });
+                      }}
+                    >
                       Summarize
                     </Button>
 
@@ -105,15 +226,43 @@ export default function Dashboard() {
                       variant="light"
                       radius="xl"
                       fullWidth
-                      onClick={() => navigate("/flash")}
+                      onClick={() => {
+                        if (!selectedTextbook || !selectedChapter) {
+                          alert("Select textbook and chapter first");
+                          return;
+                        }
+                        const chapterObj = chapters.find((ch) => ch.value === selectedChapter);
+                        navigate("/flash", {
+                          state: {
+                            textbook_id: selectedTextbook,
+                            chapter_title: chapterObj?.label,
+                          },
+                        });
+                      }}
                     >
                       Flashcards
                     </Button>
 
-                    <Button radius="xl" fullWidth
-                    onClick={() => navigate("/quiz")}>
-
-
+                    <Button
+                      radius="xl"
+                      fullWidth
+                      onClick={() => {
+                      if (!selectedTextbook || !selectedChapter || !selectedDifficulty) {
+                        alert("Select textbook, chapter, and difficulty first");
+                        return;
+                      }
+                      const chapterObj = chapters.find(
+                        (ch) => ch.value === selectedChapter
+                      );
+                      navigate("/quiz", {
+                        state: {
+                          textbook_id: selectedTextbook,
+                          chapter_title: chapterObj?.label,
+                          difficulty: selectedDifficulty,
+                        },
+                      });
+                    }}
+                    >
                       Quizzes
                     </Button>
                   </Group>
