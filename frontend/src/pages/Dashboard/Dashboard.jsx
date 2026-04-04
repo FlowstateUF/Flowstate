@@ -215,6 +215,7 @@ export default function Dashboard() {
                           state: {
                             textbook_id: selectedTextbook,
                             chapter_title: chapterObj?.label,
+                            chapter_id: selectedChapter,
                           },
                         });
                       }}
@@ -236,6 +237,8 @@ export default function Dashboard() {
                           state: {
                             textbook_id: selectedTextbook,
                             chapter_title: chapterObj?.label,
+                            chapter_id: selectedChapter,
+                            difficulty: selectedDifficulty,
                           },
                         });
                       }}
@@ -258,6 +261,7 @@ export default function Dashboard() {
                         state: {
                           textbook_id: selectedTextbook,
                           chapter_title: chapterObj?.label,
+                          chapter_id: selectedChapter,
                           difficulty: selectedDifficulty,
                         },
                       });

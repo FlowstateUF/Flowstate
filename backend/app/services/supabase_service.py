@@ -253,6 +253,171 @@ def get_chapter_topics(chapter_id: str) -> list[str]:
         .single()
         .execute()
     )
-    if not res.data:
-        return []
-    return res.data.get("topics") or []
+    return res.data.get("topics") if res.data else []
+
+# Flashcards
+
+def create_flashcard_set(user_id: str, title: str, textbook_id: str = None, chapter_id: str = None) -> dict:
+    record = supabase.table("flashcard_sets").insert({
+        "user_id": user_id,
+        "textbook_id": textbook_id,
+        "chapter_id": chapter_id,
+        "title": title
+    }).execute()
+    return record.data[0]
+
+def add_flashcard(flashcard_set_id: str, front: str, back: str, citation: str, difficulty_type: str) -> dict:
+    record = supabase.table("flashcards").insert({
+        "flashcard_set_id": flashcard_set_id,
+        "front": front,
+        "back": back,
+        "citation": citation,
+        "difficulty_type": difficulty_type
+    }).execute()
+    return record.data[0]
+
+def get_flashcard_set(flashcard_set_id: str) -> dict:
+    res = (
+        supabase.table("flashcard_sets")
+        .select("*, flashcards(*)")
+        .eq("id", flashcard_set_id)
+        .single()
+        .execute()
+    )
+    return res.data
+
+def store_flashcard_session(user_id: str, flashcard_set_id: str, time_studied: int) -> dict:
+    record = supabase.table("flashcard_sessions").insert({
+        "user_id": user_id,
+        "flashcard_set_id": flashcard_set_id,
+        "time_studied": time_studied
+    }).execute()
+
+    old_time_studied = (
+        supabase.table("flashcard_sets")
+        .select("time_studied")
+        .eq("id", flashcard_set_id)
+        .single()
+        .execute()
+    ).data.get("time_studied")
+
+    supabase.table("flashcard_sets").update({"time_studied": old_time_studied + time_studied}).eq("id", flashcard_set_id).execute()
+
+    return record.data[0]
+
+def get_user_flashcard_history(user_id: str) -> list[dict]:
+    res = (
+        supabase.table("flashcard_sessions")
+        .select("*")
+        .eq("user_id", user_id)
+        .order("completed_at", desc=True)
+        .execute()
+    )
+    return res.data or []
+
+# Quizzes
+
+def create_quiz(user_id: str, title: str, textbook_id: str, chapter_id: str) -> dict:
+    record = supabase.table("quizzes").insert({
+        "user_id": user_id,
+        "textbook_id": textbook_id,
+        "chapter_id": chapter_id,
+        "title": title
+    }).execute()
+    return record.data[0]
+
+def add_quiz_question(quiz_id: str, question: str, question_type: str, choices: dict, answer: str, explanation: str, citation: str, topic: str = None) -> dict:
+    record = supabase.table("quiz_questions").insert({
+        "quiz_id": quiz_id,
+        "question": question,
+        "difficulty_type": question_type,
+        "choices": choices,
+        "answer": answer,
+        "explanation": explanation,
+        "citation": citation,
+        "topic": topic if topic else ""
+    }).execute()
+    return record.data[0]
+
+def get_quiz(quiz_id: str) -> dict:
+    res = (
+        supabase.table("quizzes")
+        .select("*, quiz_questions(*)")
+        .eq("id", quiz_id)
+        .single()
+        .execute()
+    )
+    return res.data
+
+def submit_quiz_attempt(user_id: str, quiz_id: str, answers: dict, score: int, total_questions: int, time_studied: int) -> dict:
+    record = supabase.table("quiz_attempts").insert({
+        "user_id": user_id,
+        "quiz_id": quiz_id,
+        "answers": answers,
+        "score": score,
+        "total_questions": total_questions,
+        "time_studied": time_studied
+    }).execute()
+
+    old_time_studied = (
+        supabase.table("quizzes")
+        .select("time_studied")
+        .eq("id", quiz_id)
+        .single()
+        .execute()
+    ).data.get("time_studied")
+
+    supabase.table("quizzes").update({"time_studied": old_time_studied + time_studied}).eq("id", quiz_id).execute()
+
+    return record.data[0]
+
+def get_user_quiz_history(user_id: str) -> list[dict]:
+    res = (
+        supabase.table("quiz_attempts")
+        .select("*")
+        .eq("user_id", user_id)
+        .order("completed_at", desc=True)
+        .execute()
+    )
+    return res.data or []
+
+# Summaries
+
+def create_summary(user_id: str, textbook_id: str, chapter_id: str, title: str, content: dict) -> dict:
+    record = supabase.table("summaries").insert({
+        "user_id": user_id,
+        "textbook_id": textbook_id,
+        "chapter_id": chapter_id,
+        "title": title,
+        "content": content
+    }).execute()
+    return record.data[0]
+
+def store_summary_session(user_id: str, summary_id: str, time_studied: int) -> dict:
+    record = supabase.table("summary_sessions").insert({
+        "user_id": user_id,
+        "summary_id": summary_id,
+        "time_studied": time_studied
+    }).execute()
+
+    old_time_studied = (
+        supabase.table("summaries")
+        .select("time_studied")
+        .eq("id", summary_id)
+        .single()
+        .execute()
+    ).data.get("time_studied")
+
+    supabase.table("summaries").update({"time_studied": old_time_studied + time_studied}).eq("id", summary_id).execute()
+
+    return record.data[0]
+
+def get_user_summary_history(user_id: str) -> list[dict]:
+    res = (
+        supabase.table("summary_sessions")
+        .select("*")
+        .eq("user_id", user_id)
+        .order("completed_at", desc=True)
+        .execute()
+    )
+    return res.data or []

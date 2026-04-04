@@ -1,5 +1,4 @@
-import hashlib
-import re, time, traceback
+import hashlib, re, time, traceback
 from flask import request, jsonify
 from openai import OpenAI
 from app.services.llm_service import LLMService
@@ -26,7 +25,12 @@ from app.services.supabase_service import (
     delete_textbook_for_user,
     set_textbook_starred_for_user,
     store_toc,
-    upload_textbook_to_supabase
+    upload_textbook_to_supabase,
+    create_flashcard_set,
+    add_flashcard,
+    create_quiz,
+    add_quiz_question,
+    create_summary
 )
 
 from app.services.textbook_service import extract_toc
@@ -367,12 +371,16 @@ def register_routes(app):
 
         textbook_id = data.get("textbook_id")
         chapter_title = (data.get("chapter_title") or "").strip()
+        chapter_id = data.get("chapter_id")
 
         if not textbook_id:
             return jsonify({"error": "textbook_id required"}), 400
 
         if not chapter_title:
             return jsonify({"error": "chapter_title required"}), 400
+        
+        if not chapter_id:
+            return jsonify({"error": "chapter_id required"}), 400
 
         owned = get_textbook(user_id, textbook_id)
         if not owned.data:
@@ -397,10 +405,21 @@ def register_routes(app):
         llm = LLMService(api_key=settings.NAVIGATOR_API_KEY)
         result = llm.generate_summary(context=context, temp=0.3)
 
+        summary_title = f"{chapter_title} Summary"
+        summary = create_summary(
+            user_id,
+            textbook_id,
+            chapter_id,
+            summary_title,
+            result.get("summary") or ""
+        )
+
         return jsonify({
             "status": "success",
             "textbook_id": textbook_id,
             "chapter_title": chapter_title,
+            "chapter_id": chapter_id,
+            "summary_id": summary["id"],
             "chunks_used": len(rows),
             **result
         }), 200
@@ -414,6 +433,8 @@ def register_routes(app):
 
         textbook_id = data.get("textbook_id")
         chapter_title = (data.get("chapter_title") or "").strip()
+        chapter_id = data.get("chapter_id")
+        difficulty = data.get("difficulty")
         num_cards = int(data.get("num_cards") or 5)
 
         if not textbook_id:
@@ -421,6 +442,24 @@ def register_routes(app):
 
         if not chapter_title:
             return jsonify({"error": "chapter_title required"}), 400
+        
+        if not chapter_id:
+            return jsonify({"error": "chapter_id required"}), 400
+        
+        difficulty_map = {
+            "1": "recall",
+            "2": "understand",
+            "3": "apply",
+            "4": "analyze",
+            "recall": "recall",
+            "understand": "understand",
+            "apply": "apply",
+            "analyze": "analyze",
+        }
+
+        difficulty_type = difficulty_map.get(difficulty)
+        if not difficulty_type:
+            return jsonify({"error": "difficulty must be 1-4 or a valid type"}), 400
 
         if num_cards < 1 or num_cards > 15:
             return jsonify({"error": "num_cards must be between 1 and 15"}), 400
@@ -457,13 +496,34 @@ def register_routes(app):
             temp=0.3
         )
 
+        flashcards = result.get("flashcards") or []
+        if not isinstance(flashcards, list):
+            flashcards = []
+
+        set_title = f"{chapter_title} Flashcards"
+        flashcard_set = create_flashcard_set(user_id, set_title, textbook_id, chapter_id)
+
+        added_cards = []
+        for card in flashcards:
+            added_cards.append(
+                add_flashcard(
+                    flashcard_set["id"], 
+                    card["front"], 
+                    card["back"], 
+                    card["citation"],
+                    difficulty_type
+            ))
+
+        if not added_cards:
+            return jsonify({"error": "No flashcards were generated."}), 500
+
         return jsonify({
             "status": "success",
             "textbook_id": textbook_id,
             "chapter_title": chapter_title,
-            "flashcards": result.get("flashcards", [])
-        }), 200
-    
+            "flashcard_set_id": flashcard_set["id"],
+            "flashcards": result.get("flashcards") or []
+        }), 201
 
     @app.post("/api/generate/quiz")
     @jwt_required()
@@ -473,6 +533,7 @@ def register_routes(app):
 
         textbook_id = data.get("textbook_id")
         chapter_title = (data.get("chapter_title") or "").strip()
+        chapter_id = data.get("chapter_id")
         difficulty = str(data.get("difficulty") or "1")
         num_questions = int(data.get("num_questions") or 5)
 
@@ -481,6 +542,9 @@ def register_routes(app):
 
         if not chapter_title:
             return jsonify({"error": "chapter_title required"}), 400
+
+        if not chapter_id:
+            return jsonify({"error": "chapter_id required"}), 400
 
         difficulty_map = {
             "1": "recall",
@@ -531,9 +595,34 @@ def register_routes(app):
             temp=0.3
         )
 
+        questions = result.get("questions") or []
+        if not isinstance(questions, list):
+            questions = []
+
+        quiz_title = f"{chapter_title}: {question_type.capitalize()} Quiz"
+        quiz = create_quiz(user_id, quiz_title, textbook_id, chapter_id)
+
+        created_questions = []
+        for question in questions:
+            created_questions.append(
+                add_quiz_question(
+                    quiz["id"],
+                    question["question"],
+                    question_type,
+                    question["choices"],
+                    question["correct_answer"],
+                    question["explanation"],
+                    question["citation"]
+                )
+            )
+
+        if not created_questions:
+            return jsonify({"error": "No quiz questions were generated."}), 500
+
         return jsonify({
             "status": "success",
             "difficulty": difficulty,
             "question_type": question_type,
-            "questions": result["questions"]
-        }), 200
+            "quiz_id": quiz["id"],
+            "questions": result.get("questions") or []
+        }), 201

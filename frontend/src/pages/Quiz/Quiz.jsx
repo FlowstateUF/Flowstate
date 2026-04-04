@@ -18,7 +18,7 @@ import "./Quiz.css";
 export default function Quiz() {
   const navigate = useNavigate();
   const location = useLocation();
-  const { textbook_id, chapter_title, difficulty } = location.state || {};
+  const { textbook_id, chapter_title, chapter_id, difficulty } = location.state || {};
 
   const API_BASE = "http://127.0.0.1:5001";
 
@@ -69,6 +69,7 @@ export default function Quiz() {
         body: JSON.stringify({
           textbook_id,
           chapter_title,
+          chapter_id,
           difficulty,
           num_questions: 5,
         }),
@@ -121,7 +122,7 @@ export default function Quiz() {
   useEffect(() => {
     fetchQuiz();
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [textbook_id, chapter_title, difficulty]);
+  }, [textbook_id, chapter_title, chapter_id, difficulty]);
 
   const handleSubmit = () => {
     const responses = questions.map((q, qIndex) => {

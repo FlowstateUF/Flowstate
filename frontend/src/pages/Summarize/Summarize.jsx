@@ -114,7 +114,7 @@ function SummaryView({ value }) {
 export default function Summarize() {
   const navigate = useNavigate();
   const location = useLocation();
-  const { textbook_id, chapter_title } = location.state || {};
+  const { textbook_id, chapter_title, chapter_id } = location.state || {};
 
   const API_BASE = "http://127.0.0.1:5001";
 
@@ -147,6 +147,7 @@ export default function Summarize() {
         body: JSON.stringify({
           textbook_id,
           chapter_title,
+          chapter_id,
         }),
       });
 
@@ -186,7 +187,7 @@ export default function Summarize() {
   useEffect(() => {
     fetchSummary();
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [textbook_id, chapter_title]);
+  }, [textbook_id, chapter_title, chapter_id]);
 
   return (
     <main className="summarize-page">

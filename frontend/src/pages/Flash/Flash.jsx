@@ -17,7 +17,7 @@ export default function Flash() {
   const location = useLocation();
   const navigate = useNavigate();
 
-  const { textbook_id, chapter_title } = location.state || {};
+  const { textbook_id, chapter_title, chapter_id, difficulty } = location.state || {};
 
   const API_BASE = "http://127.0.0.1:5001";
 
@@ -30,8 +30,8 @@ export default function Flash() {
   const currentCard = cards[index] || null;
 
   async function fetchFlashcards() {
-    if (!textbook_id || !chapter_title) {
-      setError("Missing textbook_id or chapter_title. Go back and select a textbook and chapter.");
+    if (!textbook_id || !chapter_title || !difficulty) {
+      setError("Missing textbook, chapter, or difficulty. Go back and select a textbook and chapter.");
       return;
     }
 
@@ -55,6 +55,8 @@ export default function Flash() {
         body: JSON.stringify({
           textbook_id,
           chapter_title,
+          chapter_id,
+          difficulty,
           num_cards: 5,
         }),
       });
@@ -99,7 +101,7 @@ export default function Flash() {
   useEffect(() => {
     fetchFlashcards();
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [textbook_id, chapter_title]);
+  }, [textbook_id, chapter_title, chapter_id]);
 
   function goPrev() {
     setFlipped(false);
