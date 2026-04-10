@@ -14,6 +14,114 @@
   font-size: 16px;
 }
 
+.history-headingRow {
+  gap: 16px;
+}
+
+.history-allBooksTrigger {
+  min-height: 32px;
+  padding: 0;
+  border: 0;
+  border-radius: 0;
+  background: transparent;
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 14px;
+  font-weight: 700;
+  color: #2563eb;
+  cursor: pointer;
+  transition: color 140ms ease, opacity 140ms ease, transform 140ms ease;
+}
+
+.history-allBooksTrigger:hover {
+  color: #1d4ed8;
+  opacity: 0.86;
+}
+
+.history-allBooksDropdown {
+  padding: 10px;
+  background: rgba(255, 255, 255, 0.86);
+  backdrop-filter: blur(12px);
+}
+
+.history-allBooksRow {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 6px 0;
+}
+
+.history-allBooksLink {
+  flex: 1;
+  min-width: 0;
+  border: 0;
+  background: transparent;
+  text-align: left;
+  padding: 8px 10px;
+  border-radius: 10px;
+  cursor: pointer;
+  transition: background 140ms ease;
+}
+
+.history-allBooksLink:hover:not(:disabled) {
+  background: rgba(37, 99, 235, 0.06);
+}
+
+.history-allBooksLink:disabled {
+  cursor: default;
+  opacity: 0.74;
+}
+
+.history-allBooksTitle,
+.history-allBooksMeta {
+  display: block;
+}
+
+.history-allBooksTitle {
+  font-size: 14px;
+  font-weight: 600;
+  color: #111827;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.history-allBooksMeta {
+  margin-top: 2px;
+  font-size: 11px;
+  color: #6b7280;
+  text-transform: capitalize;
+}
+
+.history-starBtn {
+  width: 36px;
+  height: 36px;
+  border-radius: 50%;
+  border: 0;
+  background: transparent;
+  color: #9aa3af;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  transition: background 140ms ease, color 140ms ease, transform 140ms ease;
+}
+
+.history-starBtn:hover:not(:disabled) {
+  background: rgba(37, 99, 235, 0.08);
+  color: #2563eb;
+}
+
+.history-starBtn.is-active {
+  color: #2563eb;
+}
+
+.history-starBtn:disabled {
+  cursor: wait;
+  opacity: 0.6;
+}
+
 .history-grid {
   margin-top: 12px;
 }
@@ -219,6 +327,11 @@
 
   .history-title {
     font-size: 34px;
+  }
+
+  .history-headingRow {
+    align-items: stretch;
+    flex-direction: column;
   }
 
   .history-toast {

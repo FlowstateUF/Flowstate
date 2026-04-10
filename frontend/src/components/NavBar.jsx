@@ -1,13 +1,11 @@
 import { useNavigate } from "react-router-dom";
-import { Button, Group, Menu, Avatar } from "@mantine/core";
+import { Button, Group, Menu } from "@mantine/core";
 import {
-  IconHome2,
   IconBooks,
   IconLayoutDashboard,
   IconInfoCircle,
   IconLogin,
   IconUser,
-  IconSettings,
   IconLogout,
   IconBookUpload,
 } from "@tabler/icons-react";
@@ -16,6 +14,12 @@ import classes from "./NavBar.module.css";
 
 export default function NavBar({ isAuthed = true }) {
   const navigate = useNavigate();
+  const navItems = [
+    { label: "Upload", icon: IconBookUpload, onClick: () => navigate("/upload") },
+    { label: "Textbooks", icon: IconBooks, onClick: () => navigate("/textbooks") },
+    { label: "Dashboard", icon: IconLayoutDashboard, onClick: () => navigate("/dashboard") },
+    { label: "About", icon: IconInfoCircle, onClick: () => navigate("/about") },
+  ];
 
   const handleLogout = () => {
     localStorage.removeItem("access_token");
@@ -35,31 +39,29 @@ export default function NavBar({ isAuthed = true }) {
 
         {/* CENTER */}
         <Group gap="sm" className={classes.nav}>
-          <Button variant="subtle" leftSection={<IconBookUpload size={18} />} onClick={() => navigate("/upload")}>
-            Upload
-          </Button>
+          {navItems.map((item) => {
+            const Icon = item.icon;
 
-          <Button variant="subtle" leftSection={<IconBooks size={18} />} onClick={() => navigate("/textbooks")}
-          >
-            Textbooks
-          </Button>
-
-          <Button variant="subtle" leftSection={<IconLayoutDashboard size={18} />} onClick={() => navigate("/dashboard")}>
-            Dashboard
-          </Button>
-
-          <Button variant="subtle" leftSection={<IconInfoCircle size={18} />} onClick={() => navigate("/about")}>
-            About
-          </Button>
-
+            return (
+              <button
+                key={item.label}
+                type="button"
+                className={classes.navItem}
+                onClick={item.onClick}
+              >
+                <Icon size={24} stroke={1.9} />
+                <span>{item.label}</span>
+              </button>
+            );
+          })}
         </Group>
 
-        {}
         <Group gap="sm" className={classes.actions}>
           {!isAuthed ? (
             <Button
               variant="light"
               leftSection={<IconLogin size={18} />}
+              className={classes.loginBtn}
               onClick={() => navigate("/login")}
             >
               Log in
@@ -74,9 +76,10 @@ export default function NavBar({ isAuthed = true }) {
                 offset={8}
             >
                 <Menu.Target>
-                    <Button variant="subtle" radius="xl" className={classes.accountBtn}>
-                    <Avatar size={28} radius="xl" />
-                    </Button>
+                    <button type="button" className={`${classes.navItem} ${classes.accountNavItem}`}>
+                      <IconUser size={24} stroke={1.9} />
+                      <span>Account</span>
+                    </button>
                 </Menu.Target>
 
                 <Menu.Dropdown>

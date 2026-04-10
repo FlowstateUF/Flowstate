@@ -50,6 +50,7 @@ createRoot(document.getElementById('root')).render(
           <Route path="/stats" element={<Stats />} />
           <Route path="/textbooks" element={<History />} />
           <Route path="/flash" element={<Flash />} />
+          <Route path="/pretest" element={<Quiz />} />
           <Route path="/quiz" element={<Quiz />} />
           <Route path="/quiz/results" element={<QuizResults />} />
           <Route path="/summarize" element={<Summarize />} />
