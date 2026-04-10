@@ -14,8 +14,7 @@ import {
   Loader,
   ActionIcon,
   Tooltip,
-  Badge,
-  Loader,
+  Badge
 } from "@mantine/core";
 import { useState, useEffect, useMemo } from "react";
 import { IconLock, IconMessageCircle, IconQuestionMark, IconChecklist } from "@tabler/icons-react";
@@ -49,9 +48,6 @@ export default function Dashboard() {
 
   const [selectedTextbook, setSelectedTextbook] = useState(null);
   const [selectedChapter, setSelectedChapter] = useState(null);
-
-  const [textbooks, setTextbooks] = useState([]);
-  const [chapters, setChapters] = useState([]);
   const [textbooks, setTextbooks] = useState([]);
   const [chapters, setChapters] = useState([]);
   const [loadingTextbooks, setLoadingTextbooks] = useState(true);

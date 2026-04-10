@@ -33,7 +33,6 @@ export default function QuizResults() {
     total,
     responses = [],
     textbook_id,
-    chapter_id,
     chapter_title,
     chapter_id,
     difficulty,
