@@ -3,6 +3,7 @@ from collections import defaultdict
 
 from app.clients import supabase
 from werkzeug.security import generate_password_hash, check_password_hash
+from datetime import datetime, timezone
 
 
 # Users 
@@ -141,6 +142,11 @@ def delete_textbook_for_user(user_id: str, textbook_id: str) -> dict | None:
 
     storage_path = info.get("storage_path")
 
+    try:
+        supabase.table("pretest_attempts").delete().eq("textbook_id", textbook_id).execute()
+    except Exception:
+        pass
+
     supabase.table("pretests").delete().eq("textbook_id", textbook_id).execute()
     supabase.table("chunks").delete().eq("textbook_id", textbook_id).execute()
     supabase.table("chapters").delete().eq("textbook_id", textbook_id).execute()
@@ -186,6 +192,17 @@ def get_toc(textbook_id: str) -> list[dict]:
     result = supabase.table("chapters").select("*").eq("textbook_id", textbook_id).order("start_page").execute()
     return result.data
 
+def get_chapter(textbook_id: str, chapter_id: str) -> dict | None:
+    result = (
+        supabase.table("chapters")
+        .select("*")
+        .eq("textbook_id", textbook_id)
+        .eq("id", chapter_id)
+        .limit(1)
+        .execute()
+    )
+    return result.data[0] if result.data else None
+
 def get_textbook_page_count(textbook_id: str) -> int | None:
     res = supabase.table("textbooks").select("page_count").eq("id", textbook_id).single().execute()
     if not res.data:
@@ -224,10 +241,10 @@ def get_pretest(textbook_id: str, chapter_id: str) -> dict | None:
         .select("*")
         .eq("textbook_id", textbook_id)
         .eq("chapter_id", chapter_id)
-        .single()
+        .limit(1)
         .execute()
     )
-    return result.data
+    return result.data[0] if result.data else None
 
 def check_pretest_exists(textbook_id: str, chapter_id: str) -> bool:
     res = (
@@ -239,6 +256,90 @@ def check_pretest_exists(textbook_id: str, chapter_id: str) -> bool:
         .execute()
     )
     return bool(res.data)
+
+def get_pretest_attempt(user_id: str, textbook_id: str, chapter_id: str) -> dict | None:
+    result = (
+        supabase.table("pretest_attempts")
+        .select("*")
+        .eq("user_id", user_id)
+        .eq("textbook_id", textbook_id)
+        .eq("chapter_id", chapter_id)
+        .order("created_at", desc=True)
+        .limit(1)
+        .execute()
+    )
+    return result.data[0] if result.data else None
+
+def save_pretest_attempt_progress(
+    user_id: str,
+    textbook_id: str,
+    chapter_id: str,
+    pretest_id: str,
+    total_questions: int,
+    draft_answers: list,
+    current_question_index: int,
+) -> dict:
+    existing = get_pretest_attempt(user_id, textbook_id, chapter_id)
+
+    payload = {
+        "user_id": user_id,
+        "textbook_id": textbook_id,
+        "chapter_id": chapter_id,
+        "pretest_id": pretest_id,
+        "status": "in_progress",
+        "total_questions": total_questions,
+        "draft_answers": draft_answers,
+        "current_question_index": current_question_index,
+    }
+
+    if existing:
+        result = (
+            supabase.table("pretest_attempts")
+            .update(payload)
+            .eq("id", existing["id"])
+            .execute()
+        )
+    else:
+        result = supabase.table("pretest_attempts").insert(payload).execute()
+
+    return result.data[0]
+
+def complete_pretest_attempt(
+    user_id: str,
+    textbook_id: str,
+    chapter_id: str,
+    pretest_id: str,
+    score: int,
+    total_questions: int,
+    responses: list[dict],
+    draft_answers: list,
+) -> dict:
+    existing = get_pretest_attempt(user_id, textbook_id, chapter_id)
+    payload = {
+        "user_id": user_id,
+        "textbook_id": textbook_id,
+        "chapter_id": chapter_id,
+        "pretest_id": pretest_id,
+        "status": "completed",
+        "score": score,
+        "total_questions": total_questions,
+        "responses": responses,
+        "draft_answers": draft_answers,
+        "current_question_index": max(total_questions - 1, 0),
+        "completed_at": datetime.now(timezone.utc).isoformat(),
+    }
+
+    if existing:
+        result = (
+            supabase.table("pretest_attempts")
+            .update(payload)
+            .eq("id", existing["id"])
+            .execute()
+        )
+    else:
+        result = supabase.table("pretest_attempts").insert(payload).execute()
+
+    return result.data[0]
 
 # Chapter Topics
 

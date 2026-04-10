@@ -16,15 +16,20 @@ from app.services.supabase_service import (
     check_username_exists, 
     create_user, 
     fetch_chapter_chunks,
+    get_chapter,
+    get_pretest,
+    get_pretest_attempt,
     get_textbook,
     get_textbook_info,
     get_textbook_dashboard_snapshot,
     get_toc,
     get_user_by_id, 
     list_user_textbooks,
+    save_pretest_attempt_progress,
     rename_textbook_for_user,
     delete_textbook_for_user,
     set_textbook_starred_for_user,
+    complete_pretest_attempt,
     store_toc,
     upload_textbook_to_supabase,
     create_flashcard_set,
@@ -73,6 +78,63 @@ def _build_context_from_chunks(rows: list[dict], max_chars: int = 12000) -> str:
         parts.append(snippet)
         total += len(snippet)
     return "\n\n".join(parts)
+
+
+def _serialize_pretest_attempt(attempt: dict | None) -> dict | None:
+    if not attempt:
+        return None
+
+    responses = attempt.get("responses") or []
+    total_questions = int(attempt.get("total_questions") or len(responses))
+    draft_answers = attempt.get("draft_answers") or []
+    status = attempt.get("status") or ("completed" if responses else "in_progress")
+
+    return {
+        "id": attempt.get("id"),
+        "status": status,
+        "score": int(attempt.get("score") or 0),
+        "total_questions": total_questions,
+        "responses": responses,
+        "draft_answers": draft_answers,
+        "current_question_index": int(attempt.get("current_question_index") or 0),
+        "started_at": attempt.get("started_at") or attempt.get("created_at"),
+        "completed_at": attempt.get("completed_at") or (attempt.get("created_at") if status == "completed" else None),
+    }
+
+
+def _score_pretest_attempt(questions: list[dict], answers: list) -> tuple[int, list[dict]]:
+    answer_labels = ["A", "B", "C", "D"]
+    responses = []
+    score = 0
+
+    for idx, question in enumerate(questions):
+        choices = question.get("choices") or {}
+        raw_answer = answers[idx] if idx < len(answers) else None
+        selected_answer = raw_answer.strip().upper() if isinstance(raw_answer, str) else None
+
+        if selected_answer not in answer_labels:
+            selected_answer = None
+
+        correct_answer = (question.get("correct_answer") or "").strip().upper()
+        is_correct = selected_answer == correct_answer
+        if is_correct:
+            score += 1
+
+        responses.append({
+            "questionIndex": idx,
+            "title": f"Question {idx + 1}",
+            "prompt": question.get("question") or "",
+            "selectedAnswer": selected_answer,
+            "selectedText": choices.get(selected_answer) if selected_answer else None,
+            "correctAnswer": correct_answer or None,
+            "correctText": choices.get(correct_answer) if correct_answer else None,
+            "isCorrect": is_correct,
+            "type": question.get("type"),
+            "citation": question.get("citation"),
+            "explanation": question.get("explanation"),
+        })
+
+    return score, responses
 
 
 # ** Where HTTP routes are written **
@@ -173,7 +235,7 @@ def register_routes(app):
     def list_textbooks():
         user_id = get_jwt_identity()
         include_all = request.args.get("all", "false").lower() == "true"
-        textbooks = list_user_textbooks(user_id)
+        textbooks = list_user_textbooks(user_id, include_all=include_all)
         payload = [serialize_textbook_card(book) for book in textbooks]
         return jsonify({"textbooks": payload}), 200
     
@@ -335,6 +397,177 @@ def register_routes(app):
         return jsonify({
             "chapters": chapters
         }), 200
+
+    @app.get("/api/textbooks/<textbook_id>/chapters/<chapter_id>/pretest/status")
+    @jwt_required()
+    def get_pretest_status(textbook_id, chapter_id):
+        user_id = get_jwt_identity()
+
+        owned = get_textbook(user_id, textbook_id)
+        if not owned.data:
+            return jsonify({"error": "Textbook not found or unauthorized"}), 404
+
+        chapter = get_chapter(textbook_id, chapter_id)
+        if not chapter:
+            return jsonify({"error": "Chapter not found"}), 404
+
+        pretest = get_pretest(textbook_id, chapter_id)
+        attempt = get_pretest_attempt(user_id, textbook_id, chapter_id)
+        attempt_payload = _serialize_pretest_attempt(attempt)
+
+        return jsonify({
+            "chapter_id": chapter_id,
+            "chapter_title": chapter.get("title"),
+            "pretest_ready": bool(pretest and pretest.get("questions")),
+            "question_count": len(pretest.get("questions") or []) if pretest else 0,
+            "completed": bool(attempt_payload and attempt_payload.get("status") == "completed"),
+            "quiz_unlocked": bool(attempt_payload and attempt_payload.get("status") == "completed"),
+            "attempt": attempt_payload,
+        }), 200
+
+    @app.get("/api/textbooks/<textbook_id>/chapters/<chapter_id>/pretest")
+    @jwt_required()
+    def get_pretest_for_chapter(textbook_id, chapter_id):
+        user_id = get_jwt_identity()
+
+        owned = get_textbook(user_id, textbook_id)
+        if not owned.data:
+            return jsonify({"error": "Textbook not found or unauthorized"}), 404
+
+        chapter = get_chapter(textbook_id, chapter_id)
+        if not chapter:
+            return jsonify({"error": "Chapter not found"}), 404
+
+        pretest = get_pretest(textbook_id, chapter_id)
+        if not pretest:
+            return jsonify({"error": "Pretest not available for this chapter yet"}), 404
+
+        attempt = get_pretest_attempt(user_id, textbook_id, chapter_id)
+
+        attempt_payload = _serialize_pretest_attempt(attempt)
+
+        return jsonify({
+            "chapter_id": chapter_id,
+            "chapter_title": chapter.get("title"),
+            "completed": bool(attempt_payload and attempt_payload.get("status") == "completed"),
+            "pretest_id": pretest.get("id"),
+            "question_count": len(pretest.get("questions") or []),
+            "questions": [] if attempt_payload and attempt_payload.get("status") == "completed" else (pretest.get("questions") or []),
+            "attempt": attempt_payload,
+        }), 200
+
+    @app.post("/api/textbooks/<textbook_id>/chapters/<chapter_id>/pretest/progress")
+    @jwt_required()
+    def save_pretest_progress(textbook_id, chapter_id):
+        user_id = get_jwt_identity()
+
+        owned = get_textbook(user_id, textbook_id)
+        if not owned.data:
+            return jsonify({"error": "Textbook not found or unauthorized"}), 404
+
+        chapter = get_chapter(textbook_id, chapter_id)
+        if not chapter:
+            return jsonify({"error": "Chapter not found"}), 404
+
+        pretest = get_pretest(textbook_id, chapter_id)
+        if not pretest:
+            return jsonify({"error": "Pretest not available for this chapter yet"}), 404
+
+        existing_attempt = get_pretest_attempt(user_id, textbook_id, chapter_id)
+        existing_payload = _serialize_pretest_attempt(existing_attempt)
+        if existing_payload and existing_payload.get("status") == "completed":
+            return jsonify({
+                "error": "Pretest already completed for this chapter",
+                "attempt": existing_payload,
+            }), 409
+
+        data = request.get_json(silent=True) or {}
+        answers = data.get("answers")
+        current_question_index = data.get("current_question_index", 0)
+        questions = pretest.get("questions") or []
+
+        if not isinstance(answers, list):
+            return jsonify({"error": "answers must be an array"}), 400
+
+        if len(answers) != len(questions):
+            return jsonify({"error": "answers must include one response per question"}), 400
+
+        if not isinstance(current_question_index, int):
+            return jsonify({"error": "current_question_index must be an integer"}), 400
+
+        current_question_index = max(0, min(current_question_index, max(len(questions) - 1, 0)))
+
+        attempt = save_pretest_attempt_progress(
+            user_id=str(user_id),
+            textbook_id=str(textbook_id),
+            chapter_id=str(chapter_id),
+            pretest_id=str(pretest.get("id")),
+            total_questions=len(questions),
+            draft_answers=answers,
+            current_question_index=current_question_index,
+        )
+
+        return jsonify({
+            "status": "success",
+            "chapter_id": chapter_id,
+            "chapter_title": chapter.get("title"),
+            "attempt": _serialize_pretest_attempt(attempt),
+        }), 200
+
+    @app.post("/api/textbooks/<textbook_id>/chapters/<chapter_id>/pretest/submit")
+    @jwt_required()
+    def submit_pretest_for_chapter(textbook_id, chapter_id):
+        user_id = get_jwt_identity()
+
+        owned = get_textbook(user_id, textbook_id)
+        if not owned.data:
+            return jsonify({"error": "Textbook not found or unauthorized"}), 404
+
+        chapter = get_chapter(textbook_id, chapter_id)
+        if not chapter:
+            return jsonify({"error": "Chapter not found"}), 404
+
+        pretest = get_pretest(textbook_id, chapter_id)
+        if not pretest:
+            return jsonify({"error": "Pretest not available for this chapter yet"}), 404
+
+        existing_attempt = get_pretest_attempt(user_id, textbook_id, chapter_id)
+        existing_payload = _serialize_pretest_attempt(existing_attempt)
+        if existing_payload and existing_payload.get("status") == "completed":
+            return jsonify({
+                "error": "Pretest already completed for this chapter",
+                "attempt": existing_payload,
+            }), 409
+
+        data = request.get_json(silent=True) or {}
+        answers = data.get("answers")
+        questions = pretest.get("questions") or []
+
+        if not isinstance(answers, list):
+            return jsonify({"error": "answers must be an array"}), 400
+
+        if len(answers) != len(questions):
+            return jsonify({"error": "answers must include one response per question"}), 400
+
+        score, responses = _score_pretest_attempt(questions, answers)
+        attempt = complete_pretest_attempt(
+            user_id=str(user_id),
+            textbook_id=str(textbook_id),
+            chapter_id=str(chapter_id),
+            pretest_id=str(pretest.get("id")),
+            score=score,
+            total_questions=len(questions),
+            responses=responses,
+            draft_answers=answers,
+        )
+
+        return jsonify({
+            "status": "success",
+            "chapter_id": chapter_id,
+            "chapter_title": chapter.get("title"),
+            "quiz_unlocked": True,
+            "attempt": _serialize_pretest_attempt(attempt),
+        }), 201
 
 
     @app.get("/api/textbooks/<textbook_id>/dashboard")

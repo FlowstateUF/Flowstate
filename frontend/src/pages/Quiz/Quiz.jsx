@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef } from "react";
+import { useCallback, useEffect, useState, useRef } from "react";
 import {
   Container,
   Paper,
@@ -9,52 +9,240 @@ import {
   Stack,
   SimpleGrid,
   Button,
-  ActionIcon,
+  Badge,
+  Loader,
 } from "@mantine/core";
-import { IconInfoCircle, IconHelpCircle } from "@tabler/icons-react";
 import { useNavigate, useLocation } from "react-router-dom";
+
+import brain from "../../assets/generic_brain.png";
+import { authFetch } from "../../utils/authFetch";
 import "./Quiz.css";
+
+const API_BASE = "http://127.0.0.1:5001";
+const ANSWER_LABELS = ["A", "B", "C", "D"];
+const QUIZ_MODES = [
+  {
+    value: "easy",
+    label: "Easy",
+    apiDifficulty: "1",
+    description: "Focuses on core terms, definitions, and foundational understanding.",
+  },
+  {
+    value: "medium",
+    label: "Medium",
+    apiDifficulty: "3",
+    description: "Adds more application and checks whether you can use the main ideas.",
+  },
+  {
+    value: "hard",
+    label: "Hard",
+    apiDifficulty: "4",
+    description: "Emphasizes applying and analyzing the chapter's most important concepts.",
+  },
+];
+
+function normalizeQuestions(rawQuestions = []) {
+  return rawQuestions.map((question, questionIndex) => ({
+    title: `Question ${questionIndex + 1}`,
+    prompt: question.question,
+    choices: [
+      question.choices?.A ?? "",
+      question.choices?.B ?? "",
+      question.choices?.C ?? "",
+      question.choices?.D ?? "",
+    ],
+    correctIndex: ANSWER_LABELS.indexOf(question.correct_answer),
+    correctAnswer: question.correct_answer,
+    citation: question.citation || null,
+    explanation: question.explanation || null,
+    type: question.type || null,
+  }));
+}
+
+function buildResultState({
+  assessmentType,
+  textbook_id,
+  chapter_id,
+  chapter_title,
+  difficulty,
+  score,
+  total,
+  responses,
+}) {
+  return {
+    assessmentType,
+    score,
+    total,
+    responses,
+    textbook_id,
+    chapter_id,
+    chapter_title,
+    difficulty,
+    canRetake: assessmentType !== "pretest",
+  };
+}
+
+async function readJson(response) {
+  const raw = await response.text();
+
+  try {
+    return raw ? JSON.parse(raw) : {};
+  } catch {
+    return { error: raw || `Non-JSON response (${response.status})` };
+  }
+}
 
 export default function Quiz() {
   const navigate = useNavigate();
   const location = useLocation();
-  const { textbook_id, chapter_title, chapter_id, difficulty } = location.state || {};
+  const {
+    textbook_id,
+    chapter_id,
+    chapter_title,
+    difficulty,
+    assessmentType: assessmentTypeFromState,
+  } = location.state || {};
 
-  const API_BASE = "http://127.0.0.1:5001";
+  const assessmentType =
+    assessmentTypeFromState === "pretest" || location.pathname === "/pretest"
+      ? "pretest"
+      : "quiz";
+  const isPretest = assessmentType === "pretest";
 
   const [questions, setQuestions] = useState([]);
   const [index, setIndex] = useState(0);
-  const [selectedByIndex, setSelectedByIndex] = useState({}); // { [qIndex]: choiceIndex }
+  const [selectedByIndex, setSelectedByIndex] = useState({});
   const [loading, setLoading] = useState(false);
+  const [submitting, setSubmitting] = useState(false);
+  const [savingDraft, setSavingDraft] = useState(false);
   const [error, setError] = useState("");
   const [quizId, setQuizId] = useState(null);
   const sessionStartedAtRef = useRef(null);
+  const [quizMode, setQuizMode] = useState(() => {
+    if (difficulty === "4") return "hard";
+    if (difficulty === "3") return "medium";
+    return "easy";
+  });
+  const [quizStarted, setQuizStarted] = useState(isPretest);
+
+  const selectedQuizMode =
+    QUIZ_MODES.find((mode) => mode.value === quizMode) || QUIZ_MODES[0];
+  const quizDifficulty = selectedQuizMode.apiDifficulty;
 
   const total = questions.length;
   const current = questions[index];
   const progressValue = total > 0 ? ((index + 1) / total) * 100 : 0;
-
   const selectedChoice = selectedByIndex[index];
-
-  const goPrev = () => setIndex((i) => Math.max(0, i - 1));
-  const goNext = () => setIndex((i) => Math.min(total - 1, i + 1));
-
-  const selectChoice = (choiceIdx) => {
-    setSelectedByIndex((prev) => ({ ...prev, [index]: choiceIdx }));
-  };
-
   const answeredCount = Object.keys(selectedByIndex).length;
   const allAnswered = total > 0 && answeredCount === total;
 
-  async function fetchQuiz() {
-    if (!textbook_id || !chapter_title || !difficulty) {
-      setError("Missing textbook, chapter, or difficulty. Go back and select them first.");
+  const goPrev = () => setIndex((currentIndex) => Math.max(0, currentIndex - 1));
+  const goNext = () => setIndex((currentIndex) => Math.min(total - 1, currentIndex + 1));
+
+  const selectChoice = (choiceIndex) => {
+    setSelectedByIndex((previous) => ({ ...previous, [index]: choiceIndex }));
+  };
+
+  const goBackToDashboard = () => {
+    navigate("/dashboard", {
+      state: {
+        textbookId: textbook_id,
+        chapterId: chapter_id,
+      },
+    });
+  };
+
+  const buildAnswerPayload = () => {
+    return questions.map((_, questionIndex) => {
+      const selectedIndex = selectedByIndex[questionIndex];
+      return selectedIndex != null ? ANSWER_LABELS[selectedIndex] : null;
+    });
+  };
+
+  const restoreDraftState = (attempt) => {
+    if (!attempt || attempt.status !== "in_progress") {
       return;
     }
 
-    const token = localStorage.getItem("access_token");
-    if (!token) {
-      setError("No access token found. Please log in again.");
+    const draftAnswers = Array.isArray(attempt.draft_answers) ? attempt.draft_answers : [];
+    const restoredSelections = {};
+
+    draftAnswers.forEach((answer, questionIndex) => {
+      const normalizedAnswer = typeof answer === "string" ? answer.toUpperCase() : null;
+      const selectedIndex = ANSWER_LABELS.indexOf(normalizedAnswer);
+      if (selectedIndex !== -1) {
+        restoredSelections[questionIndex] = selectedIndex;
+      }
+    });
+
+    setSelectedByIndex(restoredSelections);
+    setIndex(Math.max(0, Number(attempt.current_question_index) || 0));
+  };
+
+  const saveDraftAndReturn = async () => {
+    if (!isPretest) {
+      goBackToDashboard();
+      return;
+    }
+
+    if (!textbook_id || !chapter_id || !questions.length) {
+      goBackToDashboard();
+      return;
+    }
+
+    setSavingDraft(true);
+    setError("");
+
+    try {
+      const response = await authFetch(
+        `${API_BASE}/api/textbooks/${textbook_id}/chapters/${chapter_id}/pretest/progress`,
+        {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+          },
+          body: JSON.stringify({
+            answers: buildAnswerPayload(),
+            current_question_index: index,
+          }),
+        }
+      );
+
+      const payload = await readJson(response);
+
+      if (response.status === 409 && payload.attempt) {
+        navigate("/quiz/results", {
+          replace: true,
+          state: buildResultState({
+            assessmentType: "pretest",
+            textbook_id,
+            chapter_id,
+            chapter_title: chapter_title || payload.chapter_title,
+            difficulty: quizDifficulty,
+            score: payload.attempt.score,
+            total: payload.attempt.total_questions,
+            responses: payload.attempt.responses || [],
+          }),
+        });
+        return;
+      }
+
+      if (!response.ok) {
+        setError(payload?.error || `Request failed (${response.status})`);
+        return;
+      }
+
+      goBackToDashboard();
+    } catch (saveError) {
+      setError(String(saveError));
+    } finally {
+      setSavingDraft(false);
+    }
+  };
+
+  const fetchQuiz = useCallback(async () => {
+    if (!textbook_id || !chapter_title || !quizDifficulty) {
+      setError("Missing textbook, chapter, or difficulty. Go back and select them first.");
       return;
     }
 
@@ -63,88 +251,203 @@ export default function Quiz() {
     setQuizId(null);
 
     try {
-      const res = await fetch(`${API_BASE}/api/generate/quiz`, {
+      const response = await authFetch(`${API_BASE}/api/generate/quiz`, {
         method: "POST",
         headers: {
           "Content-Type": "application/json",
-          Authorization: `Bearer ${token}`,
         },
         body: JSON.stringify({
           textbook_id,
           chapter_title,
-          chapter_id,
-          difficulty,
+          difficulty: quizDifficulty,
           num_questions: 5,
         }),
       });
 
-      const raw = await res.text();
-      let data = {};
+      const payload = await readJson(response);
 
-      try {
-        data = raw ? JSON.parse(raw) : {};
-      } catch {
-        data = { error: raw || `Non-JSON response (${res.status})` };
-      }
-
-      if (!res.ok) {
-        setError(data?.error || `Request failed (${res.status})`);
+      if (!response.ok) {
+        setError(payload?.error || `Request failed (${response.status})`);
         return;
       }
 
-      const fetchedQuestions = data.questions || [];
+      const normalized = normalizeQuestions(payload.questions || []);
 
-      if (!Array.isArray(fetchedQuestions) || fetchedQuestions.length === 0) {
+      if (!normalized.length) {
         setError("Backend returned no quiz questions.");
         setQuestions([]);
         return;
       }
 
-      const normalized = fetchedQuestions.map((q, qIndex) => ({
-        title: `Question ${qIndex + 1}`,
-        prompt: q.question,
-        choices: [
-          q.choices?.A ?? "",
-          q.choices?.B ?? "",
-          q.choices?.C ?? "",
-          q.choices?.D ?? "",
-        ],
-        correctIndex: ["A", "B", "C", "D"].indexOf(q.correct_answer),
-      }));
+      setQuestions(normalized);
+      setIndex(0);
+      setSelectedByIndex({});
+    } catch (fetchError) {
+      setError(String(fetchError));
+    } finally {
+      setLoading(false);
+    }
+  }, [chapter_title, quizDifficulty, textbook_id]);
+
+  const fetchPretest = useCallback(async () => {
+    if (!textbook_id || !chapter_id) {
+      setError("Missing textbook or chapter. Go back and choose a chapter first.");
+      return;
+    }
+
+    setLoading(true);
+    setError("");
+
+    try {
+      const response = await authFetch(
+        `${API_BASE}/api/textbooks/${textbook_id}/chapters/${chapter_id}/pretest`
+      );
+
+      const payload = await readJson(response);
+
+      if (!response.ok) {
+        setError(payload?.error || `Request failed (${response.status})`);
+        return;
+      }
+
+      if (payload.completed && payload.attempt) {
+        navigate("/quiz/results", {
+          replace: true,
+          state: buildResultState({
+            assessmentType: "pretest",
+            textbook_id,
+            chapter_id,
+            chapter_title: payload.chapter_title || chapter_title,
+            difficulty: quizDifficulty,
+            score: payload.attempt.score,
+            total: payload.attempt.total_questions,
+            responses: payload.attempt.responses || [],
+          }),
+        });
+        return;
+      }
+
+      const normalized = normalizeQuestions(payload.questions || []);
+
+      if (!normalized.length) {
+        setError("This chapter pretest is not ready yet.");
+        setQuestions([]);
+        return;
+      }
 
       setQuestions(normalized);
       setIndex(0);
       setSelectedByIndex({});
       setQuizId(data.quiz_id || null);
       sessionStartedAtRef.current = Date.now();
-    } catch (e) {
-      setError(String(e));
+      restoreDraftState(payload.attempt);
+    } catch (fetchError) {
+      setError(String(fetchError));
     } finally {
       setLoading(false);
     }
-  }
+  }, [chapter_id, chapter_title, navigate, quizDifficulty, textbook_id]);
 
   useEffect(() => {
+    if (!isPretest && !quizStarted) {
+      return;
+    }
+
+    if (isPretest) {
+      fetchPretest();
+      return;
+    }
+
     fetchQuiz();
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [textbook_id, chapter_title, chapter_id, difficulty]);
+  }, [fetchPretest, fetchQuiz, isPretest, quizStarted]);
 
   const handleSubmit = async () => {
-    const responses = questions.map((q, qIndex) => {
-      const chosen = selectedByIndex[qIndex];
+    if (!allAnswered) return;
+
+    if (isPretest) {
+      setSubmitting(true);
+      setError("");
+
+      try {
+        const answers = questions.map((_, questionIndex) => {
+          const selectedIndex = selectedByIndex[questionIndex];
+          return selectedIndex != null ? ANSWER_LABELS[selectedIndex] : null;
+        });
+
+        const response = await authFetch(
+          `${API_BASE}/api/textbooks/${textbook_id}/chapters/${chapter_id}/pretest/submit`,
+          {
+            method: "POST",
+            headers: {
+              "Content-Type": "application/json",
+            },
+            body: JSON.stringify({ answers }),
+          }
+        );
+
+        const payload = await readJson(response);
+
+        if (response.status === 409 && payload.attempt) {
+          navigate("/quiz/results", {
+            replace: true,
+            state: buildResultState({
+              assessmentType: "pretest",
+              textbook_id,
+              chapter_id,
+              chapter_title: chapter_title || payload.chapter_title,
+              difficulty: quizDifficulty,
+              score: payload.attempt.score,
+              total: payload.attempt.total_questions,
+              responses: payload.attempt.responses || [],
+            }),
+          });
+          return;
+        }
+
+        if (!response.ok) {
+          setError(payload?.error || `Request failed (${response.status})`);
+          return;
+        }
+
+        navigate("/quiz/results", {
+          state: buildResultState({
+            assessmentType: "pretest",
+            textbook_id,
+            chapter_id,
+            chapter_title: chapter_title || payload.chapter_title,
+            difficulty: quizDifficulty,
+            score: payload.attempt.score,
+            total: payload.attempt.total_questions,
+            responses: payload.attempt.responses || [],
+          }),
+        });
+      } catch (submitError) {
+        setError(String(submitError));
+      } finally {
+        setSubmitting(false);
+      }
+
+      return;
+    }
+
+    const responses = questions.map((question, questionIndex) => {
+      const selectedIndex = selectedByIndex[questionIndex];
       return {
-        questionIndex: qIndex,
-        title: q.title,
-        prompt: q.prompt,
-        selectedIndex: chosen,
-        selectedText: chosen != null ? q.choices[chosen] : null,
-        correctIndex: q.correctIndex,
-        correctText: q.choices[q.correctIndex],
-        isCorrect: chosen === q.correctIndex,
+        questionIndex,
+        title: question.title,
+        prompt: question.prompt,
+        selectedIndex,
+        selectedAnswer: selectedIndex != null ? ANSWER_LABELS[selectedIndex] : null,
+        selectedText: selectedIndex != null ? question.choices[selectedIndex] : null,
+        correctIndex: question.correctIndex,
+        correctAnswer: question.correctAnswer,
+        correctText: question.choices[question.correctIndex],
+        isCorrect: selectedIndex === question.correctIndex,
+        citation: question.citation,
+        explanation: question.explanation,
+        type: question.type,
       };
     });
-
-    const score = responses.reduce((acc, r) => acc + (r.isCorrect ? 1 : 0), 0);
 
     const letters = ["A", "B", "C", "D"];
     const answers = {};
@@ -187,9 +490,19 @@ export default function Quiz() {
         console.error("Quiz attempt save failed:", e);
       }
     }
+    
+    const score = responses.reduce(
+      (currentScore, response) => currentScore + (response.isCorrect ? 1 : 0),
+      0
+    );
 
     navigate("/quiz/results", {
-      state: {
+      state: buildResultState({
+        assessmentType: "quiz",
+        textbook_id,
+        chapter_id,
+        chapter_title,
+        difficulty: quizDifficulty,
         score,
         total,
         responses,
@@ -204,49 +517,113 @@ export default function Quiz() {
 
   return (
     <main className="quiz-page">
-      <Container size="md">
-        {/* Header */}
+      <Container fluid className="quiz-shell">
         <Group justify="space-between" align="center" className="quiz-header">
-          <Title order={1}>Quizzes</Title>
+          <div>
+            <Group gap="sm" align="center">
+              <Title order={1}>{isPretest ? "Chapter Pretest" : "Quizzes"}</Title>
+              {isPretest ? (
+                <Badge color="orange" variant="light">
+                  One-time baseline
+                </Badge>
+              ) : null}
+            </Group>
 
-          <Group gap="xs">
-            <ActionIcon variant="subtle" aria-label="Info">
-              <IconInfoCircle size={18} />
-            </ActionIcon>
-            <ActionIcon variant="subtle" aria-label="Help">
-              <IconHelpCircle size={18} />
-            </ActionIcon>
-          </Group>
+            {chapter_title ? (
+              <Text c="dimmed" mt={6}>
+                {chapter_title}
+              </Text>
+            ) : null}
+
+            {isPretest ? (
+              <Text c="dimmed" size="sm" mt={4}>
+                Complete this once to unlock chapter quizzes.
+              </Text>
+            ) : null}
+          </div>
         </Group>
 
-        {chapter_title ? (
-          <Text c="dimmed" mb="sm">
-            {chapter_title}
-          </Text>
+        {!isPretest && !quizStarted ? (
+          <Paper withBorder radius="lg" p="xl" className="quiz-card quiz-setup-card">
+            <Stack gap="xl">
+              <Group align="flex-start" gap="md" wrap="nowrap" className="quiz-setup-header">
+                <div className="quiz-setup-iconWrap" aria-hidden="true">
+                  <img src={brain} alt="" className="quiz-setup-iconImage" />
+                </div>
+
+                <div className="quiz-setup-copy">
+                  <Group gap="xs" align="center">
+                    <Text fw={700} size="xl">
+                      Choose difficulty
+                    </Text>
+                  </Group>
+                  <Text c="dimmed" size="sm" mt={8}>
+                    Pick the level you want before generating this chapter quiz.
+                  </Text>
+                </div>
+              </Group>
+
+              <SimpleGrid cols={3} spacing="md">
+                {QUIZ_MODES.map((mode) => {
+                  const isSelected = quizMode === mode.value;
+
+                  return (
+                    <button
+                      key={mode.value}
+                      type="button"
+                      className={`quiz-mode-card ${isSelected ? "selected" : ""}`}
+                      onClick={() => setQuizMode(mode.value)}
+                    >
+                      <Stack gap={8} className="quiz-mode-cardContent">
+                        <Text fw={700} size="lg">
+                          {mode.label}
+                        </Text>
+                        <Text size="sm" className="quiz-mode-description">
+                          {mode.description}
+                        </Text>
+                      </Stack>
+                    </button>
+                  );
+                })}
+              </SimpleGrid>
+
+              <Group justify="flex-end">
+                <Button onClick={() => setQuizStarted(true)}>Start Quiz</Button>
+              </Group>
+            </Stack>
+          </Paper>
         ) : null}
 
-        {/* Loading / error / empty states */}
+        {!isPretest && quizStarted ? (
+          <Group justify="flex-end" className="quiz-config-row">
+            <Badge variant="light">{selectedQuizMode.label}</Badge>
+          </Group>
+        ) : null}
+
         {error ? (
           <Paper withBorder radius="lg" p="xl" className="quiz-card">
             <Text c="red">{error}</Text>
           </Paper>
         ) : loading ? (
+          <div className="quiz-loadingCard">
+            <div className="quiz-loadingInner">
+              <Loader size={56} />
+              <Text fw={700} className="quiz-loadingTitle">
+                {isPretest ? "Loading pretest..." : "Loading quiz..."}
+              </Text>
+            </div>
+          </div>
+        ) : !isPretest && !quizStarted ? null : total === 0 ? (
           <Paper withBorder radius="lg" p="xl" className="quiz-card">
-            <Text>Generating quiz…</Text>
-          </Paper>
-        ) : total === 0 ? (
-          <Paper withBorder radius="lg" p="xl" className="quiz-card">
-            <Text>No quiz questions yet.</Text>
+            <Text>{isPretest ? "No pretest found for this chapter yet." : "No quiz questions yet."}</Text>
           </Paper>
         ) : (
           <>
-            {/* Progress */}
             <Group align="center" gap="md" className="quiz-progress-row">
               <Text className="quiz-progress-label">Progress</Text>
               <Progress value={progressValue} className="quiz-progress" radius="xl" />
             </Group>
 
-            {/* Question card */}
             <Paper withBorder radius="lg" p="xl" className="quiz-card">
               <Stack gap="sm">
                 <Text fw={700} className="quiz-question-title">
@@ -256,17 +633,16 @@ export default function Quiz() {
               </Stack>
             </Paper>
 
-            {/* Answer choices */}
             <SimpleGrid cols={{ base: 1, sm: 2 }} spacing="lg" className="quiz-answers">
-              {current.choices.map((choice, choiceIdx) => {
-                const isSelected = selectedChoice === choiceIdx;
+              {current.choices.map((choice, choiceIndex) => {
+                const isSelected = selectedChoice === choiceIndex;
 
                 return (
                   <button
-                    key={choiceIdx}
+                    key={choiceIndex}
                     type="button"
                     className={`quiz-choice ${isSelected ? "selected" : ""}`}
-                    onClick={() => selectChoice(choiceIdx)}
+                    onClick={() => selectChoice(choiceIndex)}
                   >
                     <Text className="quiz-choice-text">{choice}</Text>
                   </button>
@@ -274,7 +650,6 @@ export default function Quiz() {
               })}
             </SimpleGrid>
 
-            {/* Nav buttons */}
             <Group justify="space-between" className="quiz-nav">
               <Button variant="default" onClick={goPrev} disabled={index === 0}>
                 Prev
@@ -289,31 +664,29 @@ export default function Quiz() {
               </Button>
             </Group>
 
-            {/* Submit */}
             <Group justify="flex-end" className="quiz-submit-row">
-              <Button onClick={handleSubmit} disabled={!allAnswered}>
-                Submit Quiz
+              <Button onClick={handleSubmit} disabled={!allAnswered || submitting}>
+                {isPretest ? (submitting ? "Saving Baseline..." : "Submit Pretest") : "Submit Quiz"}
               </Button>
             </Group>
 
-            {!allAnswered && (
+            {!allAnswered ? (
               <Text className="quiz-hint" ta="right">
                 Answer all questions to submit.
               </Text>
-            )}
-
-            <Group justify="flex-end" mt="md">
-              <Button variant="light" onClick={fetchQuiz} disabled={loading}>
-                Regenerate
-              </Button>
-            </Group>
+            ) : null}
           </>
         )}
+
         <Group justify="flex-end" className="flash-return">
-            <Button variant="default" onClick={() => navigate("/dashboard")}>
-              Return to Dashboard
-            </Button>
-          </Group>
+          <Button
+            variant="default"
+            onClick={isPretest ? saveDraftAndReturn : goBackToDashboard}
+            disabled={savingDraft || submitting}
+          >
+            {isPretest ? (savingDraft ? "Saving..." : "Save and Return") : "Return to Dashboard"}
+          </Button>
+        </Group>
       </Container>
     </main>
   );
