@@ -502,24 +502,18 @@ export default function Quiz() {
       0
     );
 
-    navigate("/quiz/results", {
-      state: buildResultState({
-        assessmentType: "quiz",
-        textbook_id,
-        chapter_id,
-        chapter_title,
-        difficulty: quizDifficulty,
-        score,
-        total,
-        responses,
-        textbook_id,
-        chapter_title,
-        chapter_id,
-        difficulty,
-        quiz_id: quizId,
-      },
-    });
-  };
+navigate("/quiz/results", {
+  state: buildResultState({
+    assessmentType: "quiz",
+    textbook_id,
+    chapter_id,
+    chapter_title,
+    difficulty: quizDifficulty,
+    score,
+    total,
+    responses,
+  }),
+});
 
   return (
     <main className="quiz-page">
@@ -712,4 +706,5 @@ export default function Quiz() {
       </Container>
     </main>
   );
+  }
 }
