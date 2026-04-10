@@ -38,6 +38,7 @@ from app.services.textbook_service import extract_toc
 from app.services.vector_service import (
     get_collection_info,
     retrieve_context,
+    retrieve_relevant_chunks,
     fetch_all_chunks,
     delete_textbook_chunks,
 )
@@ -52,21 +53,280 @@ from app.config import settings
 from flask_jwt_extended import create_access_token, jwt_required, get_jwt_identity
 
 
-def _build_context_from_chunks(rows: list[dict], max_chars: int = 12000) -> str:
-    parts = []
-    total = 0
-    for r in rows:
-        content = (r.get("content") or "").strip()
+def buildStudyContextFromChunks(
+    rows: list[dict],
+    max_chars: int = 12000,
+    bucket_count: int = 4,
+) -> str:
+    prepared = []
+
+    for index, row in enumerate(rows):
+        content = (row.get("content") or "").strip()
         if not content:
             continue
-        page = r.get("page_number")
+
+        page = row.get("page_number")
         prefix = f"Page {page}: " if page is not None else ""
         snippet = prefix + content
+
+        prepared.append({
+            "index": index,
+            "page_number": page if isinstance(page, int) else None,
+            "snippet": snippet,
+        })
+
+    if not prepared:
+        return ""
+
+    full_context = "\n\n".join(item["snippet"] for item in prepared)
+    if len(full_context) <= max_chars:
+        return full_context
+
+    bucket_total = max(1, min(bucket_count, len(prepared)))
+    page_numbers = [item["page_number"] for item in prepared if item["page_number"] is not None]
+    buckets = [[] for _ in range(bucket_total)]
+
+    if page_numbers:
+        min_page = min(page_numbers)
+        max_page = max(page_numbers)
+        span = max(1, ((max_page - min_page) + bucket_total) // bucket_total)
+
+        for item in prepared:
+            page = item["page_number"]
+            if page is None:
+                bucket_index = min(bucket_total - 1, (item["index"] * bucket_total) // len(prepared))
+            else:
+                bucket_index = min(bucket_total - 1, (page - min_page) // span)
+            buckets[bucket_index].append(item)
+    else:
+        for item in prepared:
+            bucket_index = min(bucket_total - 1, (item["index"] * bucket_total) // len(prepared))
+            buckets[bucket_index].append(item)
+
+    selected_indices = set()
+    positions = [0] * bucket_total
+    total_chars = 0
+
+    while True:
+        added_this_round = False
+
+        for bucket_index, bucket in enumerate(buckets):
+            while positions[bucket_index] < len(bucket):
+                item = bucket[positions[bucket_index]]
+                positions[bucket_index] += 1
+
+                if item["index"] in selected_indices:
+                    continue
+
+                separator_chars = 2 if selected_indices else 0
+                snippet_len = len(item["snippet"])
+                if total_chars + separator_chars + snippet_len > max_chars:
+                    break
+
+                selected_indices.add(item["index"])
+                total_chars += separator_chars + snippet_len
+                added_this_round = True
+                break
+
+        if not added_this_round:
+            break
+
+    if not selected_indices:
+        return prepared[0]["snippet"][:max_chars].strip()
+
+    selected = [
+        item["snippet"]
+        for item in prepared
+        if item["index"] in selected_indices
+    ]
+    return "\n\n".join(selected)
+
+
+def build_chat_context(rows: list[dict], max_chars: int = 10000) -> str:
+    parts = []
+    total = 0
+
+    for idx, row in enumerate(rows, start=1):
+        content = (row.get("content") or "").strip()
+        if not content:
+            continue
+
+        citation = row.get("citation") or (f"Page {row.get('page_number')}" if row.get("page_number") is not None else None)
+        chapter = row.get("chapter")
+
+        prefix_bits = [f"Source {idx}"]
+        if chapter:
+            prefix_bits.append(f"Chapter: {chapter}")
+        if citation:
+            prefix_bits.append(f"Citation: {citation}")
+
+        snippet = " | ".join(prefix_bits) + f"\n{content}"
         if total + len(snippet) > max_chars:
             break
+
         parts.append(snippet)
         total += len(snippet)
+
     return "\n\n".join(parts)
+
+
+def serialize_chat_sources(rows: list[dict], limit: int = 4) -> list[dict]:
+    return [
+        {
+            "citation": row.get("citation"),
+            "chapter": row.get("chapter"),
+            "page_number": row.get("page_number"),
+            "content": row.get("content"),
+            "score": row.get("score"),
+        }
+        for row in rows[:limit]
+    ]
+
+
+def normalizeChapterTitle(title: str) -> str:
+    title = (title or "").strip().lower()
+    title = re.sub(r"^\d+(\.\d+)*[\s.:_-]*", "", title)
+    title = re.sub(r"\s+", " ", title)
+    return title
+
+
+def findReferencedChapter(message: str, chapters: list[dict]) -> dict | None:
+    normalized_message = (message or "").strip().lower()
+    if not normalized_message or not chapters:
+        return None
+
+    chapter_number_match = re.search(r"\bchapter\s+(\d+(?:\.\d+)*)\b", normalized_message)
+    if chapter_number_match:
+        chapter_number = chapter_number_match.group(1)
+        for chapter in chapters:
+            title = (chapter.get("title") or "").strip().lower()
+            if re.match(rf"^{re.escape(chapter_number)}(?:[\s.:_-]|$)", title):
+                return chapter
+
+    for chapter in chapters:
+        normalized_title = normalizeChapterTitle(chapter.get("title") or "")
+        if normalized_title and normalized_title in normalized_message:
+            return chapter
+
+    return None
+
+
+def findChapterByTitle(chapter_title: str, chapters: list[dict]) -> dict | None:
+    normalized_target = normalizeChapterTitle(chapter_title or "")
+    if not normalized_target:
+        return None
+
+    for chapter in chapters:
+        normalized_title = normalizeChapterTitle(chapter.get("title") or "")
+        if normalized_title == normalized_target:
+            return chapter
+
+    return None
+
+
+def isChapterOverviewQuery(message: str) -> bool:
+    normalized_message = (message or "").strip().lower()
+    overview_keywords = [
+        "summarize",
+        "summary",
+        "what is",
+        "what's",
+        "what is chapter",
+        "what is this chapter",
+        "about",
+        "overview",
+        "main idea",
+        "core idea",
+    ]
+    return any(keyword in normalized_message for keyword in overview_keywords)
+
+
+def isChapterRangeQuery(message: str) -> bool:
+    normalized_message = (message or "").strip().lower()
+    range_keywords = [
+        "what page",
+        "what pages",
+        "which page",
+        "which pages",
+        "page range",
+        "pages does",
+        "pages is",
+        "starts on",
+        "start on",
+        "start page",
+        "begin on",
+        "begins on",
+        "end page",
+        "ends on",
+        "span",
+        "spans",
+    ]
+    return any(keyword in normalized_message for keyword in range_keywords)
+
+
+def buildChapterRangeResponse(chapter: dict) -> tuple[str, list[str]]:
+    title = (chapter.get("title") or "").strip()
+    start_page = chapter.get("start_page")
+    end_page = chapter.get("end_page")
+
+    if start_page is None:
+        return (f"I found {title}, but its page range is not available.", [])
+
+    if end_page in (None, start_page):
+        citation = f"Page {start_page}"
+        return (f'{title} starts on {citation.lower()} of the textbook.', [citation])
+
+    citation = f"Pages {start_page}-{end_page}"
+    return (f'{title} spans {citation.lower()} of the textbook.', [citation])
+
+
+def rowsFromQdrantPoints(points: list, chapter: dict | None = None) -> list[dict]:
+    rows = []
+    chapter_start = chapter.get("start_page") if chapter else None
+    chapter_end = chapter.get("end_page") if chapter else None
+
+    for point in points:
+        payload = point.payload or {}
+        content = (payload.get("text") or payload.get("content") or "").strip()
+        if not content:
+            continue
+
+        page_number = payload.get("page_number") or payload.get("page_start")
+        if (
+            chapter_start is not None and chapter_end is not None and isinstance(page_number, int)
+            and (page_number < chapter_start or page_number > chapter_end)
+        ):
+            continue
+
+        citation = payload.get("citation")
+        if not citation and page_number is not None:
+            page_end = payload.get("page_end")
+            citation = f"Page {page_number}" if page_end in (None, page_number) else f"Pages {page_number}-{page_end}"
+
+        rows.append({
+            "content": content,
+            "citation": citation,
+            "page_number": page_number,
+            "chapter": payload.get("chapter"),
+            "score": getattr(point, "score", None),
+        })
+
+    return rows
+
+
+def buildChapterScopedRows(textbook_id: str, chapter_title: str, user_id: str) -> tuple[list[dict], dict | None]:
+    chapters = get_toc(textbook_id) or []
+    matched_chapter = findChapterByTitle(chapter_title, chapters)
+
+    points = fetch_all_chunks(
+        textbook_id=textbook_id,
+        chapter_title=chapter_title,
+        user_id=user_id
+    )
+
+    rows = rowsFromQdrantPoints(points, matched_chapter)
+    rows = sorted(rows, key=lambda row: row.get("page_number") or 0)
+    return rows, matched_chapter
 
 
 def _serialize_pretest_attempt(attempt: dict | None) -> dict | None:
@@ -387,6 +647,133 @@ def register_routes(app):
             "chapters": chapters
         }), 200
 
+    @app.get("/api/textbooks/<textbook_id>/ask-flo")
+    @jwt_required()
+    def get_textbook_chat_info(textbook_id):
+        user_id = get_jwt_identity()
+
+        owned = get_textbook(user_id, textbook_id)
+        if not owned.data:
+            return jsonify({"error": "Textbook not found or unauthorized"}), 404
+
+        textbook = get_textbook_info(textbook_id)
+        if not textbook:
+            return jsonify({"error": "Textbook not found"}), 404
+
+        return jsonify({
+            "textbook_id": str(textbook.get("id")),
+            "textbook_title": display_title(textbook.get("title") or "Untitled textbook"),
+            "status": textbook.get("status"),
+            "can_chat": textbook.get("status") == "ready",
+            "scope": "textbook",
+        }), 200
+
+    @app.post("/api/textbooks/<textbook_id>/ask-flo/query")
+    @jwt_required()
+    def ask_flo_query(textbook_id):
+        user_id = get_jwt_identity()
+
+        owned = get_textbook(user_id, textbook_id)
+        if not owned.data:
+            return jsonify({"error": "Textbook not found or unauthorized"}), 404
+
+        textbook = get_textbook_info(textbook_id)
+        if not textbook:
+            return jsonify({"error": "Textbook not found"}), 404
+
+        if textbook.get("status") != "ready":
+            return jsonify({"error": "Textbook is still processing"}), 409
+
+        data = request.get_json(silent=True) or {}
+        message = (data.get("message") or "").strip()
+        top_k = int(data.get("top_k") or 6)
+
+        if not message:
+            return jsonify({"error": "message is required"}), 400
+
+        if len(message) > 2000:
+            return jsonify({"error": "message must be 2000 characters or fewer"}), 400
+
+        top_k = max(3, min(top_k, 10))
+
+        chapters = get_toc(textbook_id) or []
+        matched_chapter = findReferencedChapter(message, chapters)
+
+        if matched_chapter and isChapterRangeQuery(message):
+            answer, citations = buildChapterRangeResponse(matched_chapter)
+            return jsonify({
+                "status": "success",
+                "textbook_id": str(textbook_id),
+                "textbook_title": display_title(textbook.get("title") or "Untitled textbook"),
+                "message": answer,
+                "grounded": True,
+                "citations": citations,
+                "sources": [],
+                "matched_chapter": matched_chapter,
+            }), 200
+
+        if matched_chapter and isChapterOverviewQuery(message):
+            points = fetch_all_chunks(
+                textbook_id=str(textbook_id),
+                chapter_title=matched_chapter.get("title"),
+                user_id=str(user_id),
+            )
+            points = sorted(points, key=lambda point: ((point.payload or {}).get("page_start") or 0))
+            rows = rowsFromQdrantPoints(points, matched_chapter)
+        else:
+            chapter_title = matched_chapter.get("title") if matched_chapter else None
+            rows = retrieve_relevant_chunks(
+                user_id=str(user_id),
+                textbook_id=str(textbook_id),
+                query=message,
+                top_k=top_k,
+                chapter_title=chapter_title,
+            )
+
+        if not rows:
+            return jsonify({
+                "status": "success",
+                "textbook_id": str(textbook_id),
+                "textbook_title": display_title(textbook.get("title") or "Untitled textbook"),
+                "message": "I’m not sure this textbook clearly covers that. Try asking about a specific concept, definition, or example from the book.",
+                "grounded": False,
+                "citations": [],
+                "sources": [],
+                "matched_chapter": matched_chapter,
+            }), 200
+
+        context = build_chat_context(rows, max_chars=14000 if matched_chapter and isChapterOverviewQuery(message) else 10000)
+        if not context.strip():
+            return jsonify({
+                "status": "success",
+                "textbook_id": str(textbook_id),
+                "textbook_title": display_title(textbook.get("title") or "Untitled textbook"),
+                "message": "I found matching textbook chunks, but they were not clear enough to answer confidently.",
+                "grounded": False,
+                "citations": [],
+                "sources": serialize_chat_sources(rows),
+                "matched_chapter": matched_chapter,
+            }), 200
+
+        llm = LLMService(api_key=settings.NAVIGATOR_API_KEY)
+        result = llm.answer_textbook_question(
+            textbook_title=display_title(textbook.get("title") or "Untitled textbook"),
+            question=message,
+            context=context,
+            temp=0.2,
+        )
+
+        return jsonify({
+            "status": "success",
+            "textbook_id": str(textbook_id),
+            "textbook_title": display_title(textbook.get("title") or "Untitled textbook"),
+            "message": result.get("answer"),
+            "grounded": result.get("grounded"),
+            "citations": result.get("citations", []),
+            "sources": serialize_chat_sources(rows),
+            "matched_chapter": matched_chapter,
+        }), 200
+
     @app.get("/api/textbooks/<textbook_id>/chapters/<chapter_id>/pretest/status")
     @jwt_required()
     def get_pretest_status(textbook_id, chapter_id):
@@ -611,19 +998,15 @@ def register_routes(app):
         if not owned.data:
             return jsonify({"error": "Textbook not found or unauthorized"}), 404
 
-        points = fetch_all_chunks(textbook_id=textbook_id, chapter_title=chapter_title, user_id=user_id)
-        if not points:
+        rows, matched_chapter = buildChapterScopedRows(
+            textbook_id=textbook_id,
+            chapter_title=chapter_title,
+            user_id=user_id
+        )
+        if not rows:
             return jsonify({"error": "No chunks found for that chapter"}), 400
 
-        rows = []
-        for p in points:
-            payload = p.payload or {}
-            rows.append({
-                "content": payload.get("text") or payload.get("content") or "",
-                "page_number": payload.get("page_number") or payload.get("page_start"),
-            })
-
-        context = _build_context_from_chunks(rows, max_chars=14000)
+        context = buildStudyContextFromChunks(rows, max_chars=16000)
         if not context.strip():
             return jsonify({"error": "Empty context after filtering"}), 400
 
@@ -634,6 +1017,7 @@ def register_routes(app):
             "status": "success",
             "textbook_id": textbook_id,
             "chapter_title": chapter_title,
+            "matched_chapter": matched_chapter,
             "chunks_used": len(rows),
             **result
         }), 200
@@ -662,24 +1046,16 @@ def register_routes(app):
         if not owned.data:
             return jsonify({"error": "Textbook not found or unauthorized"}), 404
 
-        points = fetch_all_chunks(
+        rows, matched_chapter = buildChapterScopedRows(
             textbook_id=textbook_id,
             chapter_title=chapter_title,
             user_id=user_id
         )
 
-        if not points:
+        if not rows:
             return jsonify({"error": "No chunks found for that chapter"}), 400
 
-        rows = []
-        for p in points:
-            payload = p.payload or {}
-            rows.append({
-                "content": payload.get("text") or payload.get("content") or "",
-                "page_number": payload.get("page_number") or payload.get("page_start"),
-            })
-
-        context = _build_context_from_chunks(rows, max_chars=14000)
+        context = buildStudyContextFromChunks(rows, max_chars=14000)
         if not context.strip():
             return jsonify({"error": "Empty context after filtering"}), 400
 
@@ -694,6 +1070,7 @@ def register_routes(app):
             "status": "success",
             "textbook_id": textbook_id,
             "chapter_title": chapter_title,
+            "matched_chapter": matched_chapter,
             "flashcards": result.get("flashcards", [])
         }), 200
     
@@ -734,24 +1111,16 @@ def register_routes(app):
         if not owned.data:
             return jsonify({"error": "Textbook not found or unauthorized"}), 404
 
-        points = fetch_all_chunks(
+        rows, matched_chapter = buildChapterScopedRows(
             textbook_id=textbook_id,
             chapter_title=chapter_title,
             user_id=user_id
         )
 
-        if not points:
+        if not rows:
             return jsonify({"error": "No chunks found for that chapter"}), 400
 
-        rows = []
-        for p in points:
-            payload = p.payload or {}
-            rows.append({
-                "content": payload.get("text") or payload.get("content") or "",
-                "page_number": payload.get("page_number") or payload.get("page_start"),
-            })
-
-        context = _build_context_from_chunks(rows, max_chars=14000)
+        context = buildStudyContextFromChunks(rows, max_chars=14000)
         if not context.strip():
             return jsonify({"error": "Empty context after filtering"}), 400
 
@@ -766,6 +1135,9 @@ def register_routes(app):
 
         return jsonify({
             "status": "success",
+            "textbook_id": textbook_id,
+            "chapter_title": chapter_title,
+            "matched_chapter": matched_chapter,
             "difficulty": difficulty,
             "question_type": question_type,
             "questions": result["questions"]

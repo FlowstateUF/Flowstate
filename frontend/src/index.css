@@ -1,14 +1,20 @@
 html {
   min-height: 100%;
+  font-size: 13px;
 }
 
 body {
   margin: 0;
   min-height: 100vh;
   background:
-    radial-gradient(circle at top right, rgba(34, 139, 230, 0.16), transparent 28%),
-    radial-gradient(circle at top left, rgba(59, 130, 246, 0.1), transparent 24%),
-    linear-gradient(180deg, #f8fbff 0%, #eef4fb 100%);
+    radial-gradient(circle at 12% 16%, rgba(147, 197, 253, 0.28), transparent 24%),
+    radial-gradient(circle at 84% 12%, rgba(191, 219, 254, 0.32), transparent 22%),
+    radial-gradient(circle at 78% 82%, rgba(191, 219, 254, 0.24), transparent 26%),
+    radial-gradient(circle at 40% 102%, rgba(147, 197, 253, 0.16), transparent 18%),
+    radial-gradient(ellipse at 92% 14%, rgba(96, 165, 250, 0.16) 0 9%, transparent 10%),
+    radial-gradient(ellipse at 88% 22%, rgba(96, 165, 250, 0.1) 0 14%, transparent 15%),
+    radial-gradient(ellipse at 70% 88%, rgba(96, 165, 250, 0.12) 0 12%, transparent 13%),
+    linear-gradient(180deg, #f8fbff 0%, #eef5ff 52%, #f9fbff 100%);
   background-attachment: fixed;
 }
 

@@ -20,6 +20,7 @@
   background: #f8fafc;
   border: 1px solid rgba(148, 163, 184, 0.18);
   flex: 0 0 auto;
+  position: relative;
 }
 
 .dashboard-cover-image {
@@ -33,6 +34,15 @@
   object-fit: cover;
   object-position: center top;
   background: #f8fafc;
+}
+
+.dashboard-cover-loader {
+  position: absolute;
+  inset: 0;
+  display: grid;
+  place-items: center;
+  background: rgba(255, 255, 255, 0.52);
+  backdrop-filter: blur(3px);
 }
 
 .dashboard-middle {
@@ -59,55 +69,91 @@
 .dashboard-controls {
   width: 320px;
   flex: 0 0 auto;
+  align-items: center;
+}
+
+.dashboard-controls-title {
+  width: 100%;
 }
 
 .dashboard-pretest-row {
-  align-items: center;
-}
-
-.dashboard-pretest-actions {
   width: 100%;
-  display: grid;
-  grid-template-columns: 1fr auto 1fr;
   align-items: center;
 }
 
-.dashboard-pretest-buttonWrap {
-  grid-column: 2;
-  justify-self: center;
+.dashboard-primary-actions {
+  width: 100%;
+}
+
+.dashboard-pretest-wrap {
+  width: 100%;
+  position: relative;
+}
+
+.dashboard-pretest-button {
+  width: 100%;
+}
+
+.dashboard-quiz-wrap {
+  width: 100%;
 }
 
 .dashboard-pretest-side {
-  grid-column: 3;
-  justify-self: start;
+  position: absolute;
+  top: 50%;
+  right: 12px;
+  transform: translateY(-50%);
   display: flex;
   align-items: center;
-  gap: 8px;
-  margin-left: 10px;
+  gap: 4px;
+  z-index: 1;
+}
+
+.dashboard-pretest-help {
+  width: auto;
+  height: auto;
+  min-width: 0;
+  padding: 0;
+  background: transparent;
+  border: 0;
+  color: white;
+}
+
+.dashboard-pretest-help:hover {
+  background: transparent;
+  color: rgba(255, 255, 255, 0.92);
 }
 
 .dashboard-actions {
   width: 100%;
   display: flex;
   gap: 12px;
-  flex-wrap: wrap;
+  flex-wrap: nowrap;
+}
+
+.dashboard-actions-secondary {
+  margin-top: 2px;
+}
+
+.dashboard-primary-actions button {
+  width: 100%;
 }
 
 .dashboard-actions > * {
   flex: 1;
 }
 
-.dashboard-actions button {
-  font-size: 14px;
-  padding: 10px 14px;
-  white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  min-width: 120px;
+.dashboard-controls > button {
+  width: 100%;
 }
 
-.dashboard-lock-note {
-  min-height: 20px;
+.dashboard-actions button {
+  font-size: 13px;
+  padding: 10px 10px;
+  min-width: 0;
+  white-space: normal;
+  line-height: 1.15;
+  height: auto;
 }
 
 

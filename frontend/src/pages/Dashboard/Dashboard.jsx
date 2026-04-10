@@ -16,7 +16,7 @@ import {
   Tooltip,
   Badge,
 } from "@mantine/core";
-import { IconChecklist, IconLock, IconQuestionMark } from "@tabler/icons-react";
+import { IconLock, IconMessageCircle, IconQuestionMark } from "@tabler/icons-react";
 import { useEffect, useState } from "react";
 import { useLocation, useNavigate } from "react-router-dom";
 
@@ -51,6 +51,8 @@ export default function Dashboard() {
 
   const [textbooks, setTextbooks] = useState([]);
   const [chapters, setChapters] = useState([]);
+  const [loadingTextbooks, setLoadingTextbooks] = useState(true);
+  const [loadingChapters, setLoadingChapters] = useState(false);
   const [pretestStatus, setPretestStatus] = useState(createEmptyPretestStatus);
   const [customCovers, setCustomCovers] = useState(() => {
     try {
@@ -61,6 +63,7 @@ export default function Dashboard() {
   });
 
   const selectedChapterOption = chapters.find((chapter) => chapter.value === selectedChapter);
+  const selectedTextbookOption = textbooks.find((book) => book.value === selectedTextbook);
   const quizLocked = !pretestStatus.completed;
   const canOpenPretest = pretestStatus.pretestReady || pretestStatus.completed;
   const selectedCover = selectedTextbook ? customCovers[selectedTextbook] : null;
@@ -69,6 +72,7 @@ export default function Dashboard() {
     let active = true;
 
     async function loadTextbooks() {
+      setLoadingTextbooks(true);
       const response = await authFetch(`${API_BASE}/api/textbooks`);
 
       if (response.status === 401) {
@@ -79,6 +83,8 @@ export default function Dashboard() {
       const payload = await response.json().catch(() => ({}));
       if (!response.ok) {
         console.error(payload.error || "Failed to load textbooks");
+        if (!active) return;
+        setLoadingTextbooks(false);
         return;
       }
 
@@ -93,10 +99,13 @@ export default function Dashboard() {
 
       const preferredOption = options.find((option) => option.value === preferredTextbookId);
       setSelectedTextbook(preferredOption?.value || null);
+      setLoadingTextbooks(false);
     }
 
     loadTextbooks().catch((error) => {
       console.error("Failed to load textbooks:", error);
+      if (!active) return;
+      setLoadingTextbooks(false);
     });
 
     return () => {
@@ -111,9 +120,11 @@ export default function Dashboard() {
       if (!selectedTextbook) {
         setChapters([]);
         setSelectedChapter(null);
+        setLoadingChapters(false);
         return;
       }
 
+      setLoadingChapters(true);
       const response = await authFetch(`${API_BASE}/api/textbooks/${selectedTextbook}/chapters`);
 
       if (response.status === 401) {
@@ -128,6 +139,7 @@ export default function Dashboard() {
         if (!active) return;
         setChapters([]);
         setSelectedChapter(null);
+        setLoadingChapters(false);
         return;
       }
 
@@ -146,6 +158,7 @@ export default function Dashboard() {
           : null;
 
       setSelectedChapter(matchingPreferredChapter?.value || null);
+      setLoadingChapters(false);
     }
 
     loadChapters().catch((error) => {
@@ -153,6 +166,7 @@ export default function Dashboard() {
       if (!active) return;
       setChapters([]);
       setSelectedChapter(null);
+      setLoadingChapters(false);
     });
 
     return () => {
@@ -248,6 +262,20 @@ export default function Dashboard() {
     });
   };
 
+  const navigateWithTextbook = (path, extraState = {}) => {
+    if (!selectedTextbook) {
+      return;
+    }
+
+    navigate(path, {
+      state: {
+        textbook_id: selectedTextbook,
+        textbook_title: selectedTextbookOption?.label,
+        ...extraState,
+      },
+    });
+  };
+
   const handlePretestClick = () => {
     if (!canOpenPretest) {
       return;
@@ -265,6 +293,16 @@ export default function Dashboard() {
 
     navigateWithChapter("/quiz", {
       assessmentType: "quiz",
+    });
+  };
+
+  const handleAskFlowstateClick = () => {
+    if (!selectedTextbook) {
+      return;
+    }
+
+    navigateWithTextbook("/ask-flowstate", {
+      entryPoint: "dashboard",
     });
   };
 
@@ -290,6 +328,11 @@ export default function Dashboard() {
                     fallbackSrc="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='300' height='300'%3E%3Crect width='300' height='300' fill='%23e9ecef'/%3E%3Cpath d='M80 210l55-60 40 45 30-25 55 65H80z' fill='%23adb5bd'/%3E%3Ccircle cx='115' cy='120' r='18' fill='%23adb5bd'/%3E%3C/svg%3E"
                     fit="cover"
                   />
+                  {loadingTextbooks ? (
+                    <div className="dashboard-cover-loader" aria-live="polite">
+                      <Loader size="sm" />
+                    </div>
+                  ) : null}
                 </Box>
 
                 <Stack gap={10} className="dashboard-middle">
@@ -300,6 +343,8 @@ export default function Dashboard() {
                       data={textbooks}
                       value={selectedTextbook}
                       onChange={setSelectedTextbook}
+                      disabled={loadingTextbooks}
+                      rightSection={loadingTextbooks ? <Loader size={14} /> : undefined}
                     />
                   </Box>
 
@@ -310,56 +355,101 @@ export default function Dashboard() {
                       data={chapters}
                       value={selectedChapter}
                       onChange={setSelectedChapter}
-                      disabled={!selectedTextbook}
+                      disabled={!selectedTextbook || loadingChapters}
+                      rightSection={loadingChapters ? <Loader size={14} /> : undefined}
                     />
                   </Box>
                 </Stack>
 
                 <Stack gap="sm" className="dashboard-controls">
-                  <Text fw={600}>Select the following to begin</Text>
+                  <Text fw={600} ta="center" className="dashboard-controls-title">
+                    Select one of the following
+                  </Text>
 
-                  <Stack gap={6} className="dashboard-pretest-row">
-                    <div className="dashboard-pretest-actions">
-                      <div className="dashboard-pretest-buttonWrap">
-                        <Button
-                          radius="xl"
-                          leftSection={<IconChecklist size={16} />}
-                          onClick={handlePretestClick}
-                          disabled={
-                            !selectedTextbook || !selectedChapter || pretestStatus.loading || !canOpenPretest
-                          }
-                        >
-                          {pretestStatus.completed ? "View Baseline" : "Take Pretest"}
-                        </Button>
-                      </div>
+                  <Stack gap="sm" className="dashboard-primary-actions">
+                    <Button
+                      radius="xl"
+                      fullWidth
+                      leftSection={<IconMessageCircle size={16} />}
+                      onClick={handleAskFlowstateClick}
+                      disabled={!selectedTextbook}
+                    >
+                      Ask Flo
+                    </Button>
+
+                    <div className="dashboard-pretest-wrap">
+                      <Button
+                        radius="xl"
+                        fullWidth
+                        className="dashboard-pretest-button"
+                        onClick={handlePretestClick}
+                        disabled={
+                          !selectedTextbook || !selectedChapter || pretestStatus.loading || !canOpenPretest
+                        }
+                      >
+                        {pretestStatus.completed ? "View Baseline" : "Take Pretest"}
+                      </Button>
 
                       <div className="dashboard-pretest-side">
-                        <Tooltip
-                          multiline
-                          w={220}
-                          withArrow
-                          label={`One-time pretest to gauge baseline knowledge.\n${pretestStatus.questionCount || 12} questions. One attempt only.`}
-                        >
-                          <ActionIcon variant="subtle" radius="xl" aria-label="Pretest info">
-                            <IconQuestionMark size={16} />
-                          </ActionIcon>
-                        </Tooltip>
+                        {!pretestStatus.completed ? (
+                          <Tooltip
+                            multiline
+                            w={220}
+                            withArrow
+                            label={`One-time pretest to gauge baseline knowledge.\n${pretestStatus.questionCount || 12} questions. One attempt only.`}
+                          >
+                            <ActionIcon
+                              variant="transparent"
+                              radius="xl"
+                              aria-label="Pretest info"
+                              className="dashboard-pretest-help"
+                            >
+                              <IconQuestionMark size={14} />
+                            </ActionIcon>
+                          </Tooltip>
+                        ) : null}
 
                         {pretestStatus.loading ? <Loader size="sm" /> : null}
                       </div>
                     </div>
 
-                    {pretestStatus.error ? (
-                      <Text size="sm" c="red" ta="center">
-                        {pretestStatus.error}
-                      </Text>
-                    ) : null}
+                    <Tooltip
+                      multiline
+                      w={220}
+                      withArrow
+                      disabled={!quizLocked}
+                      label="Complete the chapter pretest to unlock quizzes."
+                    >
+                      <div className="dashboard-quiz-wrap">
+                        <Button
+                          radius="xl"
+                          fullWidth
+                          leftSection={quizLocked ? <IconLock size={16} /> : null}
+                          onClick={handleQuizClick}
+                          disabled={
+                            !selectedTextbook ||
+                            !selectedChapter ||
+                            pretestStatus.loading ||
+                            quizLocked
+                          }
+                        >
+                          Quizzes
+                        </Button>
+                      </div>
+                    </Tooltip>
                   </Stack>
 
-                  <Group gap="sm" className="dashboard-actions">
+                  {pretestStatus.error ? (
+                    <Text size="sm" c="red" ta="center">
+                      {pretestStatus.error}
+                    </Text>
+                  ) : null}
+
+                  <Group gap="sm" className="dashboard-actions dashboard-actions-secondary">
                     <Button
-                      radius="xl"
+                      variant="light"
                       fullWidth
+                      radius="xl"
                       onClick={() => navigateWithChapter("/summarize")}
                       disabled={!selectedTextbook || !selectedChapter}
                     >
@@ -375,25 +465,8 @@ export default function Dashboard() {
                     >
                       Flashcards
                     </Button>
-
-                    <Button
-                      radius="xl"
-                      fullWidth
-                      leftSection={quizLocked ? <IconLock size={16} /> : null}
-                      onClick={handleQuizClick}
-                      disabled={
-                        !selectedTextbook || !selectedChapter || pretestStatus.loading || quizLocked
-                      }
-                    >
-                      Quizzes
-                    </Button>
                   </Group>
 
-                  {quizLocked ? (
-                    <Text size="sm" c="dimmed" className="dashboard-lock-note">
-                      Complete the chapter pretest to unlock quizzes.
-                    </Text>
-                  ) : null}
                 </Stack>
               </Group>
 

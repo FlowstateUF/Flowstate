@@ -163,7 +163,7 @@ export default function Flash() {
                 <div className={`flipcard ${flipped ? "is-flipped" : ""}`}>
                   <div className="flipcard-face flipcard-front">
                     <Text fw={800} className="front-title">
-                      Question
+                      Front
                     </Text>
                     <Text className="front-text">
                       {currentCard.question || currentCard.front || "No question"}
@@ -172,7 +172,7 @@ export default function Flash() {
 
                   <div className="flipcard-face flipcard-back">
                     <Text fw={800} className="back-title">
-                      Answer
+                      Back
                     </Text>
                     <Text className="back-text">
                       {currentCard.answer || currentCard.back || "No answer"}

@@ -549,29 +549,21 @@ const handleCoverUpload = (bookId, file) => {
 
   const fetchTextbooks = useCallback(async () => {
     try {
-      const [starredResponse, allResponse] = await Promise.all([
-        authFetch(`${API_BASE}/api/textbooks`),
-        authFetch(`${API_BASE}/api/textbooks?all=true`),
-      ]);
+      const response = await authFetch(`${API_BASE}/api/textbooks?all=true`);
 
-      if (starredResponse.status === 401 || allResponse.status === 401) {
+      if (response.status === 401) {
         navigate("/login");
         return;
       }
 
-      const starredPayload = await starredResponse.json().catch(() => ({}));
-      const allPayload = await allResponse.json().catch(() => ({}));
+      const payload = await response.json().catch(() => ({}));
 
-      if (!starredResponse.ok || !allResponse.ok) {
-        throw new Error(
-          starredPayload.error || allPayload.error || "Could not load textbooks."
-        );
+      if (!response.ok) {
+        throw new Error(payload.error || "Could not load textbooks.");
       }
 
-      const rawStarredBooks = Array.isArray(starredPayload)
-        ? starredPayload
-        : starredPayload.textbooks || [];
-      const rawAllBooks = Array.isArray(allPayload) ? allPayload : allPayload.textbooks || [];
+      const rawAllBooks = Array.isArray(payload) ? payload : payload.textbooks || [];
+      const rawStarredBooks = rawAllBooks.filter((book) => book.is_starred !== false);
       const pendingList = readPendingTextbooks();
 
       setTextbooks((previousBooks) => mergeTextbooks(rawStarredBooks, previousBooks, pendingList));

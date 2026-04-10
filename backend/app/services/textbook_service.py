@@ -47,6 +47,90 @@ tokenizer = OpenAITokenizer(
     )
 chunker = HybridChunker(tokenizer=tokenizer, max_tokens=512, overlap=64)
 
+MAIN_CHAPTER_REGEX = re.compile(
+    r"^\s*(?:chapter\s+)?(\d+)(?!\.\d)\b(?:\s*[.:_-]\s*|\s+)",
+    re.IGNORECASE,
+)
+CHAPTER_NUMBER_WORD_PATTERN = (
+    r"one|two|three|four|five|six|seven|eight|nine|ten|"
+    r"eleven|twelve|thirteen|fourteen|fifteen|sixteen|seventeen|eighteen|nineteen|"
+    r"twenty(?:[\s-]+(?:one|two|three|four|five|six|seven|eight|nine))?|"
+    r"thirty(?:[\s-]+(?:one|two|three|four|five|six|seven|eight|nine))?|"
+    r"forty(?:[\s-]+(?:one|two|three|four|five|six|seven|eight|nine))?|"
+    r"fifty(?:[\s-]+(?:one|two|three|four|five|six|seven|eight|nine))?"
+)
+WORD_OR_ROMAN_CHAPTER_REGEX = re.compile(
+    rf"^\s*chapter\s+(?:{CHAPTER_NUMBER_WORD_PATTERN}|[ivxlcdm]+)\b(?:\s*[.:_-]\s*|\s+)",
+    re.IGNORECASE,
+)
+CHAPTER_PREFIX_REGEX = re.compile(
+    rf"^\s*(?:chapter\s+(?:\d+(?!\.\d)\b|{CHAPTER_NUMBER_WORD_PATTERN}\b|[ivxlcdm]+\b)|\d+(?!\.\d)\b)(?:\s*[.:_-]\s*|\s+)",
+    re.IGNORECASE,
+)
+END_REGEX = re.compile(
+    r"""(?i)(
+        conclusion|
+        concluding(\s+remarks)?|
+        final\s+(summary|remarks|thoughts)|
+        summary|
+        synthesis|
+        wrap[-\s]?up|
+        review\s+and\s+outlook|
+        putting\s+it\s+all\s+together|
+        capstone|
+        integrat(ing|ion)|
+        comprehensive\s+(review|summary)|
+        case\s+studies?|
+        applications?|
+        advanced\s+applications?|
+        review|
+        practice\s+problems?|
+        test\s+yourself|
+        exam\s+preparation|
+        self[-\s]?assessment|
+        appendix(\s+[a-z])?|
+        appendices|
+        math(ematical)?\s+background|
+        math\s+review|
+        algebra\s+review|
+        calculus\s+review|
+        technical\s+background|
+        derivations?|
+        data\s+tables?|
+        statistical\s+tables?|
+        conversion\s+tables?|
+        additional\s+figures?|
+        supplementary\s+data|
+        worked\s+examples?|
+        selected\s+solutions?|
+        solutions?\s+to|
+        additional\s+exercises?|
+        glossary|
+        index|
+        list\s+of\s+symbols|
+        list\s+of\s+abbreviations|
+        notation\s+guide
+    )""",
+    re.VERBOSE
+)
+FRONT_MATTER_REGEX = re.compile(
+    r"""(?i)^(
+        contents?|
+        table\s+of\s+contents|
+        copyright|
+        title\s+page|
+        dedication|
+        foreword|
+        preface|
+        acknowledg(e)?ments?|
+        about\s+the\s+author|
+        authors?\s+note|
+        how\s+to\s+use\s+this\s+book|
+        how\s+to\s+read\s+this\s+book
+    )$""",
+    re.VERBOSE,
+)
+
 # ANNACHEN vv 
 def normalize_text(s: str) -> str:
     s = s.replace("\u00a0", " ")
@@ -56,13 +140,141 @@ def normalize_text(s: str) -> str:
 
 def pdf_page_range(pdf_bytes: bytes, start_page: int, end_page: int) -> bytes:
     src = pymupdf.open(stream=pdf_bytes, filetype="pdf")
+    try:
+        return pdf_page_range_from_doc(src, start_page, end_page)
+    finally:
+        src.close()
+
+def pdf_page_range_from_doc(src: pymupdf.Document, start_page: int, end_page: int) -> bytes:
     out = pymupdf.open()
-    out.insert_pdf(src, from_page=start_page-1, to_page=end_page-1)
-    b = out.tobytes()
-    src.close()
-    out.close()
-    return b
+    try:
+        out.insert_pdf(src, from_page=start_page-1, to_page=end_page-1)
+        return out.tobytes()
+    finally:
+        out.close()
 # ANNACHEN ^^
+
+def isMainChapterTitle(title: str) -> bool:
+    normalized = (title or "").strip()
+    return bool(MAIN_CHAPTER_REGEX.match(normalized) or WORD_OR_ROMAN_CHAPTER_REGEX.match(normalized))
+
+def stripChapterNumberPrefix(title: str) -> str:
+    return CHAPTER_PREFIX_REGEX.sub("", (title or "").strip()).strip()
+
+def isSkippableTocTitle(title: str) -> bool:
+    normalized = stripChapterNumberPrefix(title)
+    return bool(FRONT_MATTER_REGEX.search(normalized) or END_REGEX.search(normalized))
+
+def selectMainChapterEntries(toc: list[list]) -> list[tuple[int, str, int]]:
+    if not toc:
+        return []
+
+    levels = sorted({item[0] for item in toc})
+    ranked_candidates: list[tuple[int, int, list[tuple[int, str, int]]]] = []
+
+    for level in levels:
+        entries = [item for item in toc if item[0] == level]
+        numbered_entries = [
+            item for item in entries
+            if isMainChapterTitle(item[1] or "")
+        ]
+        if numbered_entries:
+            ranked_candidates.append((len(numbered_entries), -level, numbered_entries))
+
+    if ranked_candidates:
+        ranked_candidates.sort(reverse=True)
+        best_count, _, best_entries = ranked_candidates[0]
+        if best_count >= 2:
+            return best_entries
+
+    fallback_candidates: list[tuple[int, int, list[tuple[int, str, int]]]] = []
+    for level in levels:
+        entries = [item for item in toc if item[0] == level]
+        filtered_entries = [
+            item for item in entries
+            if not isSkippableTocTitle(item[1] or "")
+        ]
+        if filtered_entries:
+            fallback_candidates.append((len(filtered_entries), -level, filtered_entries))
+
+    if fallback_candidates:
+        fallback_candidates.sort(reverse=True)
+        best_count, _, best_entries = fallback_candidates[0]
+        if best_count >= 2:
+            return best_entries
+
+    return [
+        item for item in toc
+        if isMainChapterTitle(item[1] or "") and not isSkippableTocTitle(item[1] or "")
+    ]
+
+def buildChapterRanges(level_toc: list[tuple[int, str, int]], total_pages: int) -> list[dict]:
+    chapters = []
+
+    for i, (_, title, start_page) in enumerate(level_toc):
+        if isSkippableTocTitle(title):
+            continue
+
+        if i == len(level_toc) - 1:
+            end_page = total_pages
+        else:
+            end_page = level_toc[i + 1][2] - 1
+
+        chapters.append({
+            "title": title,
+            "start_page": start_page,
+            "end_page": max(start_page, end_page),
+        })
+
+    return chapters
+
+def getChapterForPage(page: int, toc: list[dict]) -> str:
+    if not page or not toc:
+        return "Unknown"
+
+    for chapter in toc:
+        if chapter["start_page"] <= page <= chapter["end_page"]:
+            return chapter["title"]
+
+    previous = [chapter for chapter in toc if chapter["start_page"] <= page]
+    return previous[-1]["title"] if previous else toc[0]["title"]
+
+def getChapterForPages(pages: list[int], toc: list[dict]) -> str:
+    valid_pages = [page for page in pages if isinstance(page, int)]
+    if not valid_pages:
+        return "Unknown"
+
+    chapter_counts: dict[str, int] = {}
+    for page in valid_pages:
+        chapter_title = getChapterForPage(page, toc)
+        chapter_counts[chapter_title] = chapter_counts.get(chapter_title, 0) + 1
+
+    top_count = max(chapter_counts.values())
+    top_chapters = [title for title, count in chapter_counts.items() if count == top_count]
+
+    if len(top_chapters) == 1:
+        return top_chapters[0]
+
+    midpoint_page = valid_pages[len(valid_pages) // 2]
+    return getChapterForPage(midpoint_page, toc)
+
+def summarizeChunkDistribution(chunks: list[dict], toc: list[dict]) -> list[dict]:
+    summary = []
+    for chapter in toc:
+        chapter_chunks = [
+            chunk for chunk in chunks
+            if chunk.get("chapter") == chapter["title"]
+        ]
+        pages = [chunk.get("page_start") for chunk in chapter_chunks if isinstance(chunk.get("page_start"), int)]
+        summary.append({
+            "title": chapter["title"],
+            "start_page": chapter["start_page"],
+            "end_page": chapter["end_page"],
+            "chunk_count": len(chapter_chunks),
+            "min_chunk_page": min(pages) if pages else None,
+            "max_chunk_page": max(pages) if pages else None,
+        })
+    return summary
 
 def extract_toc(file: bytes) -> tuple[list[dict], int]:
     """
@@ -75,130 +287,9 @@ def extract_toc(file: bytes) -> tuple[list[dict], int]:
 
     if not toc:
         return [{"title": "Full Textbook", "start_page": 1, "end_page": total_pages}], total_pages
-
-    # Regex that checks for any chapter like "Concluding Remarks"
-    CHAPTER_NUMBER_REGEX = re.compile(r"^\s*\d+(\.\d+)*\s+")
-    END_REGEX = re.compile(
-        r"""(?i)(
-            conclusion|
-            concluding(\s+remarks)?|
-            final\s+(summary|remarks|thoughts)|
-            summary|
-            synthesis|
-            wrap[-\s]?up|
-            review\s+and\s+outlook|
-            putting\s+it\s+all\s+together|
-            capstone|
-            integrat(ing|ion)|
-            comprehensive\s+(review|summary)|
-            case\s+studies?|
-            applications?|
-            advanced\s+applications?|
-            review|
-            practice\s+problems?|
-            test\s+yourself|
-            exam\s+preparation|
-            self[-\s]?assessment|
-            appendix(\s+[a-z])?|
-            appendices|
-            math(ematical)?\s+background|
-            math\s+review|
-            algebra\s+review|
-            calculus\s+review|
-            technical\s+background|
-            derivations?|
-            data\s+tables?|
-            statistical\s+tables?|
-            conversion\s+tables?|
-            additional\s+figures?|
-            supplementary\s+data|
-            worked\s+examples?|
-            selected\s+solutions?|
-            solutions?\s+to|
-            additional\s+exercises?|
-            glossary|
-            index|
-            list\s+of\s+symbols|
-            list\s+of\s+abbreviations|
-            notation\s+guide
-        )""",
-        re.VERBOSE
-    )
-
-    # Check if level 1 entries are chapters, and then level 2
-    # Check second entry to be sure
-    level_toc = [item for item in toc if item[0] == 1]
-
-    if not re.match(r"^\d+", level_toc[1][1]):
-        level_toc = [item for item in toc if item[0] == 2]
-
-    chapters = []
-
-    for i, (_, title, start_page) in enumerate(level_toc):
-
-        # Skip if chapter doesn't start with a number
-        if not re.match(r"^\d+", title):
-            continue
-
-        normalized_title = CHAPTER_NUMBER_REGEX.sub("", title).strip()
-        if bool(END_REGEX.search(normalized_title)):
-            continue
-
-        if i == len(level_toc) - 1:
-            end_page = total_pages
-        else:
-            end_page = level_toc[i + 1][2] - 1
-
-        chapters.append({
-            "title": title,
-            "start_page": start_page,
-            "end_page": end_page
-        })
-
-    # for i, (level, title, start_page) in enumerate(toc):
-    #     # if i + 1 < len(toc):
-    #     #     end_page = toc[i + 1][2] - 1
-    #     # else:
-    #     #     end_page = total_pages
-    #     end_page = total_pages
-    #     for j in range(i + 1, len(toc)):
-    #         next_level, _, next_start = toc[j]
-    #         if next_level <= level:
-    #             end_page = next_start - 1
-    #             break 
-    #         # ANNACHEN
-    #     end_page = max(start_page, end_page)
-
-    #     chapters.append({
-    #         "title": title,
-    #         "start_page": start_page,
-    #         "end_page": end_page
-    #     })
-
+    level_toc = selectMainChapterEntries(toc)
+    chapters = buildChapterRanges(level_toc, total_pages)
     return chapters, total_pages
-
-def _get_chapter_for_page(page: int, toc: list[dict]) -> str:
-    """
-    Return the chapter title for a given page number using the TOC
-    """
-    if not page or not toc:
-        return "Unknown"
-
-    # chapter_title = toc[0]["title"]
-    # for chapter in toc:
-    #     if page >= chapter["start_page"]:
-    #         chapter_title = chapter["title"]
-    #     else:
-    #         break
-
-    # return chapter_title  
-
-    for ch in toc:
-        if ch["start_page"] <= page <= ch["end_page"]:
-            return ch["title"]
-
-    previous = [c for c in toc if c["start_page"] <= page] # nearest previous chapter
-    return previous[-1]["title"] if previous else toc[0]["title"]
 
 def parse_and_chunk(file_bytes: bytes, user_id: str, textbook_id: str, toc: list[dict], *, page_offset: int = 0, start_index: int = 0) -> list[dict]:
     """ 
@@ -250,7 +341,7 @@ def parse_and_chunk(file_bytes: bytes, user_id: str, textbook_id: str, toc: list
             page_start = pages[0] if pages else None
             page_end = pages[-1] if pages else None
 
-            chapter_title = _get_chapter_for_page(page_start, toc) if page_start is not None else "Unknown"
+            chapter_title = getChapterForPages(pages, toc) if pages else "Unknown"
 
             citation = None
             if page_start is not None:
