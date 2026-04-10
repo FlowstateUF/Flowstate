@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useState, useRef } from "react";
 import {
   Container,
   Paper,
@@ -122,6 +122,8 @@ export default function Quiz() {
   const [submitting, setSubmitting] = useState(false);
   const [savingDraft, setSavingDraft] = useState(false);
   const [error, setError] = useState("");
+  const [quizId, setQuizId] = useState(null);
+  const sessionStartedAtRef = useRef(null);
   const [quizMode, setQuizMode] = useState(() => {
     if (difficulty === "4") return "hard";
     if (difficulty === "3") return "medium";
@@ -252,6 +254,7 @@ export default function Quiz() {
 
     setLoading(true);
     setError("");
+    setQuizId(null);
 
     try {
       const response = await authFetch(`${API_BASE}/api/generate/quiz`, {
@@ -341,6 +344,8 @@ export default function Quiz() {
       setQuestions(normalized);
       setIndex(0);
       setSelectedByIndex({});
+      setQuizId(data.quiz_id || null);
+      sessionStartedAtRef.current = Date.now();
       restoreDraftState(payload.attempt);
     } catch (fetchError) {
       setError(String(fetchError));
@@ -450,6 +455,48 @@ export default function Quiz() {
       };
     });
 
+    const letters = ["A", "B", "C", "D"];
+    const answers = {};
+    responses.forEach((r, qIndex) => {
+      if (r.selectedIndex != null && r.selectedIndex >= 0 && r.selectedIndex < letters.length) {
+        answers[String(qIndex)] = letters[r.selectedIndex];
+      } else {
+        answers[String(qIndex)] = "";
+      }
+    });
+
+    const started = sessionStartedAtRef.current;
+    const timeStudied = Math.max(
+      0,
+      Math.floor((Date.now() - (started ?? Date.now())) / 1000)
+    );
+
+    const token = localStorage.getItem("access_token");
+    if (quizId && token) {
+      try {
+        const res = await fetch(`${API_BASE}/api/quiz-attempts`, {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+            Authorization: `Bearer ${token}`,
+          },
+          body: JSON.stringify({
+            quiz_id: quizId,
+            answers,
+            score,
+            total_questions: total,
+            time_studied: timeStudied,
+          }),
+        });
+        if (!res.ok) {
+          const err = await res.json().catch(() => ({}));
+          console.error("Quiz attempt save failed:", err?.error || res.status);
+        }
+      } catch (e) {
+        console.error("Quiz attempt save failed:", e);
+      }
+    }
+    
     const score = responses.reduce(
       (currentScore, response) => currentScore + (response.isCorrect ? 1 : 0),
       0
@@ -465,7 +512,12 @@ export default function Quiz() {
         score,
         total,
         responses,
-      }),
+        textbook_id,
+        chapter_title,
+        chapter_id,
+        difficulty,
+        quiz_id: quizId,
+      },
     });
   };
 

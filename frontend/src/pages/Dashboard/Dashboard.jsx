@@ -15,9 +15,10 @@ import {
   ActionIcon,
   Tooltip,
   Badge,
+  Loader,
 } from "@mantine/core";
-import { IconLock, IconMessageCircle, IconQuestionMark } from "@tabler/icons-react";
-import { useEffect, useState } from "react";
+import { useState, useEffect, useMemo } from "react";
+import { IconLock, IconMessageCircle, IconQuestionMark, IconChecklist } from "@tabler/icons-react";
 import { useLocation, useNavigate } from "react-router-dom";
 
 import NavBar from "../../components/NavBar";
@@ -51,8 +52,17 @@ export default function Dashboard() {
 
   const [textbooks, setTextbooks] = useState([]);
   const [chapters, setChapters] = useState([]);
+  const [textbooks, setTextbooks] = useState([]);
+  const [chapters, setChapters] = useState([]);
   const [loadingTextbooks, setLoadingTextbooks] = useState(true);
   const [loadingChapters, setLoadingChapters] = useState(false);
+  const [dashboard, setDashboard] = useState(null);
+  const [dashboardLoading, setDashboardLoading] = useState(false);
+
+  const selectedBookLabel = useMemo(() => {
+    const o = textbooks.find((t) => t.value === selectedTextbook);
+    return o?.label || "";
+  }, [textbooks, selectedTextbook]);
   const [pretestStatus, setPretestStatus] = useState(createEmptyPretestStatus);
   const [customCovers, setCustomCovers] = useState(() => {
     try {
@@ -306,6 +316,62 @@ export default function Dashboard() {
     });
   };
 
+  useEffect(() => {
+    if (!selectedTextbook) {
+      setDashboard(null);
+      return;
+    }
+
+    const token = localStorage.getItem("access_token");
+    if (!token) return;
+
+    let cancelled = false;
+
+    async function loadDashboard() {
+      setDashboardLoading(true);
+      try {
+        const res = await fetch(
+          `${API_BASE}/api/textbooks/${selectedTextbook}/dashboard`,
+          {
+            headers: { Authorization: `Bearer ${token}` },
+          }
+        );
+        const data = await res.json();
+        if (!res.ok) {
+          console.error(data.error || "Failed to load dashboard");
+          if (!cancelled) setDashboard(null);
+          return;
+        }
+        if (!cancelled) setDashboard(data);
+      } catch (e) {
+        console.error("Failed to load dashboard:", e);
+        if (!cancelled) setDashboard(null);
+      } finally {
+        if (!cancelled) setDashboardLoading(false);
+      }
+    }
+
+    loadDashboard();
+    return () => {
+      cancelled = true;
+    };
+  }, [selectedTextbook]);
+
+  const avgChapterMastery = dashboard?.mastery?.avg_chapter_mastery_percent ?? 0;
+  const streakDays = dashboard?.study?.streak_current_days ?? 0;
+  const sessionCount7 = dashboard?.activity?.session_count_last_7 ?? 0;
+  const chapterCount = dashboard?.mastery?.chapter_count ?? chapters.length;
+
+  function openStats() {
+    if (!selectedTextbook) return;
+    navigate("/stats", {
+      state: {
+        textbook_id: selectedTextbook,
+        textbook_label: selectedBookLabel,
+      },
+    });
+  }
+
   return (
     <>
       <NavBar isAuthed={true} />
@@ -477,63 +543,83 @@ export default function Dashboard() {
               withBorder
               p="xl"
               radius="md"
-              className="dashboard-card dashboard-clickable"
-              onClick={() => navigate("/stats")}
-              role="button"
-              tabIndex={0}
-              onKeyDown={(event) => {
-                if (event.key === "Enter" || event.key === " ") navigate("/stats");
-              }}
+              className={`dashboard-card dashboard-learning-summary ${
+                selectedTextbook ? "dashboard-clickable" : ""
+              }`}
+              onClick={selectedTextbook ? openStats : undefined}
+              role={selectedTextbook ? "button" : undefined}
+              tabIndex={selectedTextbook ? 0 : undefined}
+              onKeyDown={
+                selectedTextbook
+                  ? (e) => {
+                      if (e.key === "Enter" || e.key === " ") {
+                        e.preventDefault();
+                        openStats();
+                      }
+                    }
+                  : undefined
+              }
+              aria-label={
+                selectedTextbook
+                  ? "Open full learning stats for this textbook"
+                  : undefined
+              }
             >
               <Group
-                align="stretch"
-                gap="xl"
-                wrap="nowrap"
-                className="dashboard-bottom-row"
+                align="flex-start"
+                justify="space-between"
+                wrap="wrap"
+                gap="lg"
               >
-                <Stack gap="md" className="dashboard-bottom-left">
+                <Stack gap="md" maw={560}>
                   <Box>
-                    <Title order={2}>Learning Dashboard</Title>
-                    <Group gap="sm" mt={6}>
-                      <Text c="dimmed" size="sm">
-                        Completion Rate:
-                      </Text>
-                      <Badge variant="light">xx%</Badge>
-                    </Group>
+                    <Title order={2}>Learning dashboard</Title>
                   </Box>
 
-                  <Box>
-                    <Text fw={700} size="lg" mb={6}>
-                      Masteries
-                    </Text>
-                    <Progress value={60} radius="xl" />
-                    <Progress value={40} radius="xl" mt="sm" />
-                  </Box>
+                  {dashboardLoading ? (
+                    <Loader size="sm" />
+                  ) : (
+                    <>
+                      <Box>
+                        <Group justify="space-between" mb={6}>
+                          <Text fw={600} size="sm">
+                            Progress
+                          </Text>
+                          <Badge variant="light" size="lg">
+                            {avgChapterMastery}%
+                          </Badge>
+                        </Group>
+                        <Progress
+                          value={avgChapterMastery}
+                          radius="xl"
+                          size="md"
+                          aria-label="Average chapter quiz mastery"
+                        />
+                        <Text c="dimmed" size="xs" mt={6}>
+                          {chapterCount} chapter{chapterCount === 1 ? "" : "s"} ·{" "}
+                          {sessionCount7} session
+                          {sessionCount7 === 1 ? "" : "s"} (last 7 days)
+                        </Text>
+                      </Box>
 
-                  <Box>
-                    <Text fw={700} size="lg" mb={6}>
-                      Continue
-                    </Text>
-                    <Progress value={30} radius="xl" />
-                    <Progress value={20} radius="xl" mt="sm" />
-                  </Box>
-
-                  <Text c="dimmed" size="sm">
-                    Click to view stats →
-                  </Text>
+                      <Group gap="xl">
+                        <div>
+                          <Text size="xs" c="dimmed" tt="uppercase" fw={600}>
+                            Study streak
+                          </Text>
+                          <Text fw={800} size="xl">
+                            {streakDays} day{streakDays === 1 ? "" : "s"}
+                          </Text>
+                        </div>
+                      </Group>
+                    </>
+                  )}
                 </Stack>
 
-                <Box className="dashboard-chart">
-                  <Box className="dashboard-chart-inner">
-                    <svg width="90%" height="70%" viewBox="0 0 500 250">
-                      <polyline
-                        fill="none"
-                        stroke="white"
-                        strokeWidth="4"
-                        points="20,220 110,140 180,170 250,90 320,200 390,120 450,150 490,40"
-                      />
-                    </svg>
-                  </Box>
+                <Box className="dashboard-learning-hint">
+                  <Text fw={600} size="sm" c="dimmed">
+                    View stats →
+                  </Text>
                 </Box>
               </Group>
             </Paper>
