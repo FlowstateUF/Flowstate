@@ -151,6 +151,10 @@ def delete_textbook_for_user(user_id: str, textbook_id: str) -> dict | None:
     supabase.table("chunks").delete().eq("textbook_id", textbook_id).execute()
     supabase.table("chapters").delete().eq("textbook_id", textbook_id).execute()
     supabase.table("textbooks").delete().eq("id", textbook_id).eq("user_id", user_id).execute()
+    supabase.table("quiz_attempts").delete().eq("quiz_id", ...) # need quiz_ids first
+    supabase.table("quizzes").delete().eq("textbook_id", textbook_id).execute()
+    supabase.table("flashcard_sets").delete().eq("textbook_id", textbook_id).execute()
+    supabase.table("summaries").delete().eq("textbook_id", textbook_id).execute()
 
     if storage_path:
         try:
@@ -370,13 +374,12 @@ def create_flashcard_set(user_id: str, title: str, textbook_id: str = None, chap
     }).execute()
     return record.data[0]
 
-def add_flashcard(flashcard_set_id: str, front: str, back: str, citation: str, difficulty_type: str) -> dict:
+def add_flashcard(flashcard_set_id: str, front: str, back: str, citation: str,) -> dict:
     record = supabase.table("flashcards").insert({
         "flashcard_set_id": flashcard_set_id,
         "front": front,
         "back": back,
         "citation": citation,
-        "difficulty_type": difficulty_type
     }).execute()
     return record.data[0]
 

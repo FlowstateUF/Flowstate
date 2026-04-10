@@ -17,7 +17,7 @@ export default function Flash() {
   const location = useLocation();
   const navigate = useNavigate();
 
-  const { textbook_id, chapter_title, chapter_id, difficulty } = location.state || {};
+  const { textbook_id, chapter_title, chapter_id } = location.state || {};
 
   const API_BASE = "http://127.0.0.1:5001";
 
@@ -33,10 +33,6 @@ export default function Flash() {
   const currentCard = cards[index] || null;
 
   async function fetchFlashcards() {
-    if (!textbook_id || !chapter_title || !difficulty) {
-      setError("Missing textbook, chapter, or difficulty. Go back and select a textbook and chapter.");
-      return;
-    }
 
     const token = localStorage.getItem("access_token");
     if (!token) {
@@ -61,7 +57,6 @@ export default function Flash() {
           textbook_id,
           chapter_title,
           chapter_id,
-          difficulty,
           num_cards: 5,
         }),
       });
