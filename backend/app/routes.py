@@ -18,6 +18,7 @@ from app.services.supabase_service import (
     fetch_chapter_chunks,
     get_textbook,
     get_textbook_info,
+    get_textbook_dashboard_snapshot,
     get_toc,
     get_user_by_id, 
     list_user_textbooks,
@@ -30,7 +31,13 @@ from app.services.supabase_service import (
     add_flashcard,
     create_quiz,
     add_quiz_question,
-    create_summary
+    create_summary,
+    submit_quiz_attempt,
+    store_flashcard_session,
+    store_summary_session,
+    quiz_owned_by_user,
+    flashcard_set_owned_by_user,
+    summary_owned_by_user,
 )
 
 from app.services.textbook_service import extract_toc
@@ -328,6 +335,131 @@ def register_routes(app):
         return jsonify({
             "chapters": chapters
         }), 200
+
+
+    @app.get("/api/textbooks/<textbook_id>/dashboard")
+    @jwt_required()
+    def get_textbook_dashboard(textbook_id):
+        user_id = get_jwt_identity()
+
+        owned = get_textbook(user_id, textbook_id)
+        if not owned.data:
+            return jsonify({"error": "Textbook not found or unauthorized"}), 404
+
+        recent_limit = request.args.get("recent_limit", default=8, type=int) or 8
+        snapshot = get_textbook_dashboard_snapshot(
+            user_id, textbook_id, recent_limit=recent_limit
+        )
+        if not snapshot:
+            return jsonify({"error": "Textbook not found or unauthorized"}), 404
+
+        return jsonify(snapshot), 200
+
+
+    @app.post("/api/quiz-attempts")
+    @jwt_required()
+    def post_quiz_attempt():
+        user_id = get_jwt_identity()
+        data = request.get_json(silent=True) or {}
+
+        quiz_id = data.get("quiz_id")
+        answers = data.get("answers")
+        score = data.get("score")
+        total_questions = data.get("total_questions")
+        time_studied = data.get("time_studied", 0)
+
+        if not quiz_id:
+            return jsonify({"error": "quiz_id is required"}), 400
+        if not isinstance(answers, dict):
+            return jsonify({"error": "answers must be a JSON object"}), 400
+        try:
+            score = int(score)
+            total_questions = int(total_questions)
+            time_studied = int(time_studied)
+        except (TypeError, ValueError):
+            return jsonify({"error": "score, total_questions, and time_studied must be integers"}), 400
+
+        if total_questions < 1:
+            return jsonify({"error": "total_questions must be at least 1"}), 400
+        if score < 0 or score > total_questions:
+            return jsonify({"error": "score must be between 0 and total_questions"}), 400
+        if time_studied < 0:
+            return jsonify({"error": "time_studied must be non-negative"}), 400
+
+        if not quiz_owned_by_user(str(quiz_id), str(user_id)):
+            return jsonify({"error": "Quiz not found or unauthorized"}), 404
+
+        try:
+            record = submit_quiz_attempt(
+                str(user_id),
+                str(quiz_id),
+                answers,
+                score,
+                total_questions,
+                time_studied,
+            )
+        except Exception as e:
+            return jsonify({"error": "Failed to save attempt", "details": str(e)}), 500
+
+        return jsonify({"status": "success", "attempt": record}), 201
+
+
+    @app.post("/api/flashcard-sessions")
+    @jwt_required()
+    def post_flashcard_session():
+        user_id = get_jwt_identity()
+        data = request.get_json(silent=True) or {}
+
+        flashcard_set_id = data.get("flashcard_set_id")
+        time_studied = data.get("time_studied", 0)
+
+        if not flashcard_set_id:
+            return jsonify({"error": "flashcard_set_id is required"}), 400
+        try:
+            time_studied = int(time_studied)
+        except (TypeError, ValueError):
+            return jsonify({"error": "time_studied must be an integer"}), 400
+        if time_studied < 0:
+            return jsonify({"error": "time_studied must be non-negative"}), 400
+
+        if not flashcard_set_owned_by_user(str(flashcard_set_id), str(user_id)):
+            return jsonify({"error": "Flashcard set not found or unauthorized"}), 404
+
+        try:
+            record = store_flashcard_session(str(user_id), str(flashcard_set_id), time_studied)
+        except Exception as e:
+            return jsonify({"error": "Failed to save session", "details": str(e)}), 500
+
+        return jsonify({"status": "success", "session": record}), 201
+
+
+    @app.post("/api/summary-sessions")
+    @jwt_required()
+    def post_summary_session():
+        user_id = get_jwt_identity()
+        data = request.get_json(silent=True) or {}
+
+        summary_id = data.get("summary_id")
+        time_studied = data.get("time_studied", 0)
+
+        if not summary_id:
+            return jsonify({"error": "summary_id is required"}), 400
+        try:
+            time_studied = int(time_studied)
+        except (TypeError, ValueError):
+            return jsonify({"error": "time_studied must be an integer"}), 400
+        if time_studied < 0:
+            return jsonify({"error": "time_studied must be non-negative"}), 400
+
+        if not summary_owned_by_user(str(summary_id), str(user_id)):
+            return jsonify({"error": "Summary not found or unauthorized"}), 404
+
+        try:
+            record = store_summary_session(str(user_id), str(summary_id), time_studied)
+        except Exception as e:
+            return jsonify({"error": "Failed to save session", "details": str(e)}), 500
+
+        return jsonify({"status": "success", "session": record}), 201
 
 
     # ** NaviGator Routes **

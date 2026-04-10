@@ -13,17 +13,18 @@ import {
   SimpleGrid,
   Progress,
   Badge,
+  Loader,
 } from "@mantine/core";
 import { useNavigate } from "react-router-dom";
-import { useState, useEffect } from "react";
+import { useState, useEffect, useMemo } from "react";
 
 import NavBar from "../../components/NavBar";
 import "./Dashboard.css";
 
+const API_BASE = "http://127.0.0.1:5001";
+
 export default function Dashboard() {
   const navigate = useNavigate();
-
-  const API_BASE = "http://127.0.0.1:5001";
 
   const [selectedTextbook, setSelectedTextbook] = useState(null);
   const [selectedChapter, setSelectedChapter] = useState(null);
@@ -31,8 +32,14 @@ export default function Dashboard() {
 
   const [textbooks, setTextbooks] = useState([]);
   const [chapters, setChapters] = useState([]);
+  const [dashboard, setDashboard] = useState(null);
+  const [dashboardLoading, setDashboardLoading] = useState(false);
 
-  // load textbooks on page load
+  const selectedBookLabel = useMemo(() => {
+    const o = textbooks.find((t) => t.value === selectedTextbook);
+    return o?.label || "";
+  }, [textbooks, selectedTextbook]);
+
   useEffect(() => {
     async function loadTextbooks() {
       const token = localStorage.getItem("access_token");
@@ -59,7 +66,6 @@ export default function Dashboard() {
 
         setTextbooks(options);
 
-        // optional: auto-select first textbook
         if (options.length > 0) {
           setSelectedTextbook(options[0].value);
         }
@@ -71,7 +77,6 @@ export default function Dashboard() {
     loadTextbooks();
   }, []);
 
-  // load chapters whenever textbook changes
   useEffect(() => {
     async function loadChapters() {
       if (!selectedTextbook) {
@@ -109,7 +114,6 @@ export default function Dashboard() {
 
         setChapters(options);
 
-        // reset selected chapter when textbook changes
         if (options.length > 0) {
           setSelectedChapter(options[0].value);
         } else {
@@ -125,6 +129,62 @@ export default function Dashboard() {
     loadChapters();
   }, [selectedTextbook]);
 
+  useEffect(() => {
+    if (!selectedTextbook) {
+      setDashboard(null);
+      return;
+    }
+
+    const token = localStorage.getItem("access_token");
+    if (!token) return;
+
+    let cancelled = false;
+
+    async function loadDashboard() {
+      setDashboardLoading(true);
+      try {
+        const res = await fetch(
+          `${API_BASE}/api/textbooks/${selectedTextbook}/dashboard`,
+          {
+            headers: { Authorization: `Bearer ${token}` },
+          }
+        );
+        const data = await res.json();
+        if (!res.ok) {
+          console.error(data.error || "Failed to load dashboard");
+          if (!cancelled) setDashboard(null);
+          return;
+        }
+        if (!cancelled) setDashboard(data);
+      } catch (e) {
+        console.error("Failed to load dashboard:", e);
+        if (!cancelled) setDashboard(null);
+      } finally {
+        if (!cancelled) setDashboardLoading(false);
+      }
+    }
+
+    loadDashboard();
+    return () => {
+      cancelled = true;
+    };
+  }, [selectedTextbook]);
+
+  const avgChapterMastery = dashboard?.mastery?.avg_chapter_mastery_percent ?? 0;
+  const streakDays = dashboard?.study?.streak_current_days ?? 0;
+  const sessionCount7 = dashboard?.activity?.session_count_last_7 ?? 0;
+  const chapterCount = dashboard?.mastery?.chapter_count ?? chapters.length;
+
+  function openStats() {
+    if (!selectedTextbook) return;
+    navigate("/stats", {
+      state: {
+        textbook_id: selectedTextbook,
+        textbook_label: selectedBookLabel,
+      },
+    });
+  }
+
   return (
     <>
       <NavBar isAuthed={true} />
@@ -132,7 +192,6 @@ export default function Dashboard() {
       <main className="dashboard-page">
         <Container size="lg">
           <Stack gap="xl">
-            {/* Top card */}
             <Paper withBorder p="xl" radius="md" className="dashboard-card">
               <Group
                 align="flex-start"
@@ -140,7 +199,6 @@ export default function Dashboard() {
                 wrap="nowrap"
                 className="dashboard-top-row"
               >
-                {/* Cover */}
                 <Box className="dashboard-cover">
                   <Image
                     src={null}
@@ -151,7 +209,6 @@ export default function Dashboard() {
                   />
                 </Box>
 
-                {/* Textbook dropdown + placeholder lines */}
                 <Stack gap={10} className="dashboard-middle">
                   <Box className="dashboard-title-block">
                     <Select
@@ -163,18 +220,15 @@ export default function Dashboard() {
                     />
 
                     <Text c="dimmed" size="sm" mt={6}>
-                      author • date • etc
+                      {selectedBookLabel
+                        ? `${chapters.length} chapter${
+                            chapters.length === 1 ? "" : "s"
+                          } in this book`
+                        : "Select a textbook to begin"}
                     </Text>
                   </Box>
-
-                  <Stack gap={8} className="dashboard-text-lines">
-                    <Box className="dashboard-line" style={{ width: "85%" }} />
-                    <Box className="dashboard-line" style={{ width: "70%" }} />
-                    <Box className="dashboard-line" style={{ width: "55%" }} />
-                  </Stack>
                 </Stack>
 
-                {/* Controls */}
                 <Stack gap="sm" className="dashboard-controls">
                   <Text fw={600}>Select the following to begin</Text>
 
@@ -232,7 +286,9 @@ export default function Dashboard() {
                           alert("Select textbook and chapter first");
                           return;
                         }
-                        const chapterObj = chapters.find((ch) => ch.value === selectedChapter);
+                        const chapterObj = chapters.find(
+                          (ch) => ch.value === selectedChapter
+                        );
                         navigate("/flash", {
                           state: {
                             textbook_id: selectedTextbook,
@@ -250,22 +306,28 @@ export default function Dashboard() {
                       radius="xl"
                       fullWidth
                       onClick={() => {
-                      if (!selectedTextbook || !selectedChapter || !selectedDifficulty) {
-                        alert("Select textbook, chapter, and difficulty first");
-                        return;
-                      }
-                      const chapterObj = chapters.find(
-                        (ch) => ch.value === selectedChapter
-                      );
-                      navigate("/quiz", {
-                        state: {
-                          textbook_id: selectedTextbook,
-                          chapter_title: chapterObj?.label,
-                          chapter_id: selectedChapter,
-                          difficulty: selectedDifficulty,
-                        },
-                      });
-                    }}
+                        if (
+                          !selectedTextbook ||
+                          !selectedChapter ||
+                          !selectedDifficulty
+                        ) {
+                          alert(
+                            "Select textbook, chapter, and difficulty first"
+                          );
+                          return;
+                        }
+                        const chapterObj = chapters.find(
+                          (ch) => ch.value === selectedChapter
+                        );
+                        navigate("/quiz", {
+                          state: {
+                            textbook_id: selectedTextbook,
+                            chapter_title: chapterObj?.label,
+                            chapter_id: selectedChapter,
+                            difficulty: selectedDifficulty,
+                          },
+                        });
+                      }}
                     >
                       Quizzes
                     </Button>
@@ -276,70 +338,87 @@ export default function Dashboard() {
               <Divider my="xl" />
             </Paper>
 
-            {/* Bottom card (hover blue border + click to stats) */}
             <Paper
               withBorder
               p="xl"
               radius="md"
-              className="dashboard-card dashboard-clickable"
-              onClick={() => navigate("/stats")}
-              role="button"
-              tabIndex={0}
-              onKeyDown={(e) => {
-                if (e.key === "Enter" || e.key === " ") navigate("/stats");
-              }}
+              className={`dashboard-card dashboard-learning-summary ${
+                selectedTextbook ? "dashboard-clickable" : ""
+              }`}
+              onClick={selectedTextbook ? openStats : undefined}
+              role={selectedTextbook ? "button" : undefined}
+              tabIndex={selectedTextbook ? 0 : undefined}
+              onKeyDown={
+                selectedTextbook
+                  ? (e) => {
+                      if (e.key === "Enter" || e.key === " ") {
+                        e.preventDefault();
+                        openStats();
+                      }
+                    }
+                  : undefined
+              }
+              aria-label={
+                selectedTextbook
+                  ? "Open full learning stats for this textbook"
+                  : undefined
+              }
             >
               <Group
-                align="stretch"
-                gap="xl"
-                wrap="nowrap"
-                className="dashboard-bottom-row"
+                align="flex-start"
+                justify="space-between"
+                wrap="wrap"
+                gap="lg"
               >
-                {/* Left info */}
-                <Stack gap="md" className="dashboard-bottom-left">
+                <Stack gap="md" maw={560}>
                   <Box>
-                    <Title order={2}>Learning Dashboard</Title>
-                    <Group gap="sm" mt={6}>
-                      <Text c="dimmed" size="sm">
-                        Completion Rate:
-                      </Text>
-                      <Badge variant="light">xx%</Badge>
-                    </Group>
+                    <Title order={2}>Learning dashboard</Title>
                   </Box>
 
-                  <Box>
-                    <Text fw={700} size="lg" mb={6}>
-                      Masteries
-                    </Text>
-                    <Progress value={60} radius="xl" />
-                    <Progress value={40} radius="xl" mt="sm" />
-                  </Box>
+                  {dashboardLoading ? (
+                    <Loader size="sm" />
+                  ) : (
+                    <>
+                      <Box>
+                        <Group justify="space-between" mb={6}>
+                          <Text fw={600} size="sm">
+                            Progress
+                          </Text>
+                          <Badge variant="light" size="lg">
+                            {avgChapterMastery}%
+                          </Badge>
+                        </Group>
+                        <Progress
+                          value={avgChapterMastery}
+                          radius="xl"
+                          size="md"
+                          aria-label="Average chapter quiz mastery"
+                        />
+                        <Text c="dimmed" size="xs" mt={6}>
+                          {chapterCount} chapter{chapterCount === 1 ? "" : "s"} ·{" "}
+                          {sessionCount7} session
+                          {sessionCount7 === 1 ? "" : "s"} (last 7 days)
+                        </Text>
+                      </Box>
 
-                  <Box>
-                    <Text fw={700} size="lg" mb={6}>
-                      Continue
-                    </Text>
-                    <Progress value={30} radius="xl" />
-                    <Progress value={20} radius="xl" mt="sm" />
-                  </Box>
-
-                  <Text c="dimmed" size="sm">
-                    Click to view stats →
-                  </Text>
+                      <Group gap="xl">
+                        <div>
+                          <Text size="xs" c="dimmed" tt="uppercase" fw={600}>
+                            Study streak
+                          </Text>
+                          <Text fw={800} size="xl">
+                            {streakDays} day{streakDays === 1 ? "" : "s"}
+                          </Text>
+                        </div>
+                      </Group>
+                    </>
+                  )}
                 </Stack>
 
-                {/* Chart placeholder */}
-                <Box className="dashboard-chart">
-                  <Box className="dashboard-chart-inner">
-                    <svg width="90%" height="70%" viewBox="0 0 500 250">
-                      <polyline
-                        fill="none"
-                        stroke="white"
-                        strokeWidth="4"
-                        points="20,220 110,140 180,170 250,90 320,200 390,120 450,150 490,40"
-                      />
-                    </svg>
-                  </Box>
+                <Box className="dashboard-learning-hint">
+                  <Text fw={600} size="sm" c="dimmed">
+                    View stats →
+                  </Text>
                 </Box>
               </Group>
             </Paper>

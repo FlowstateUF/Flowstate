@@ -1,4 +1,4 @@
-import { useState, useEffect } from "react";
+import { useState, useEffect, useRef } from "react";
 import {
   Container,
   Paper,
@@ -27,6 +27,8 @@ export default function Quiz() {
   const [selectedByIndex, setSelectedByIndex] = useState({}); // { [qIndex]: choiceIndex }
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
+  const [quizId, setQuizId] = useState(null);
+  const sessionStartedAtRef = useRef(null);
 
   const total = questions.length;
   const current = questions[index];
@@ -58,6 +60,7 @@ export default function Quiz() {
 
     setLoading(true);
     setError("");
+    setQuizId(null);
 
     try {
       const res = await fetch(`${API_BASE}/api/generate/quiz`, {
@@ -112,6 +115,8 @@ export default function Quiz() {
       setQuestions(normalized);
       setIndex(0);
       setSelectedByIndex({});
+      setQuizId(data.quiz_id || null);
+      sessionStartedAtRef.current = Date.now();
     } catch (e) {
       setError(String(e));
     } finally {
@@ -124,7 +129,7 @@ export default function Quiz() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [textbook_id, chapter_title, chapter_id, difficulty]);
 
-  const handleSubmit = () => {
+  const handleSubmit = async () => {
     const responses = questions.map((q, qIndex) => {
       const chosen = selectedByIndex[qIndex];
       return {
@@ -141,8 +146,47 @@ export default function Quiz() {
 
     const score = responses.reduce((acc, r) => acc + (r.isCorrect ? 1 : 0), 0);
 
-    // Log user responses
-    console.log("QUIZ SUBMISSION:", { score, total, responses });
+    const letters = ["A", "B", "C", "D"];
+    const answers = {};
+    responses.forEach((r, qIndex) => {
+      if (r.selectedIndex != null && r.selectedIndex >= 0 && r.selectedIndex < letters.length) {
+        answers[String(qIndex)] = letters[r.selectedIndex];
+      } else {
+        answers[String(qIndex)] = "";
+      }
+    });
+
+    const started = sessionStartedAtRef.current;
+    const timeStudied = Math.max(
+      0,
+      Math.floor((Date.now() - (started ?? Date.now())) / 1000)
+    );
+
+    const token = localStorage.getItem("access_token");
+    if (quizId && token) {
+      try {
+        const res = await fetch(`${API_BASE}/api/quiz-attempts`, {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+            Authorization: `Bearer ${token}`,
+          },
+          body: JSON.stringify({
+            quiz_id: quizId,
+            answers,
+            score,
+            total_questions: total,
+            time_studied: timeStudied,
+          }),
+        });
+        if (!res.ok) {
+          const err = await res.json().catch(() => ({}));
+          console.error("Quiz attempt save failed:", err?.error || res.status);
+        }
+      } catch (e) {
+        console.error("Quiz attempt save failed:", e);
+      }
+    }
 
     navigate("/quiz/results", {
       state: {
@@ -151,7 +195,9 @@ export default function Quiz() {
         responses,
         textbook_id,
         chapter_title,
+        chapter_id,
         difficulty,
+        quiz_id: quizId,
       },
     });
   };

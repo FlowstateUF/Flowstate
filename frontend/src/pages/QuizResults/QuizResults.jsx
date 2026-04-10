@@ -33,6 +33,7 @@ export default function QuizResults() {
     responses,
     textbook_id,
     chapter_title,
+    chapter_id,
     difficulty,
   } = location.state || {};
 
@@ -76,11 +77,9 @@ export default function QuizResults() {
               onClick={() =>
                 navigate("/quiz", {
                   state: {
-                    score,
-                    total,
-                    responses,
                     textbook_id,
                     chapter_title,
+                    chapter_id,
                     difficulty,
                   },
                 })

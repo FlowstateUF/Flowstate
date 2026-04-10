@@ -75,3 +75,97 @@
 .stats-link:hover {
   text-decoration: underline;
 }
+
+/* GitHub-style heatmap */
+.stats-heatmap-daily {
+  width: 100%;
+}
+
+.stats-heatmap-scroll {
+  overflow-x: auto;
+  padding-bottom: 4px;
+}
+
+.stats-heatmap-dow-label {
+  height: 14px;
+  line-height: 14px;
+  min-height: 14px;
+}
+
+.stats-heatmap-cols {
+  flex: 1;
+  min-width: 0;
+}
+
+.stats-heat-cell {
+  width: 11px;
+  height: 11px;
+  border-radius: 2px;
+  flex-shrink: 0;
+}
+
+.stats-heat-d {
+  width: 11px;
+  height: 11px;
+}
+
+.stats-heat-w {
+  width: 14px;
+  height: 28px;
+  border-radius: 3px;
+}
+
+.stats-heat-m {
+  width: 28px;
+  height: 28px;
+  border-radius: 4px;
+}
+
+.stats-heat-empty {
+  background: var(--mantine-color-gray-1);
+  border: 1px solid var(--mantine-color-gray-2);
+}
+
+.stats-heat-l0 {
+  background: var(--mantine-color-gray-1);
+  border: 1px solid var(--mantine-color-gray-2);
+}
+
+.stats-heat-l1 {
+  background: #9be9a8;
+}
+
+.stats-heat-l2 {
+  background: #40c463;
+}
+
+.stats-heat-l3 {
+  background: #30a14e;
+}
+
+.stats-heat-l4 {
+  background: #216e39;
+}
+
+.stats-heatmap-legend .stats-heat-cell {
+  width: 11px;
+  height: 11px;
+}
+
+.stats-month-cell {
+  min-width: 40px;
+}
+
+.stats-chapter-bar-wrap {
+  height: 8px;
+  border-radius: 999px;
+  background: var(--mantine-color-gray-2);
+  overflow: hidden;
+}
+
+.stats-chapter-bar-fill {
+  height: 100%;
+  border-radius: 999px;
+  background: var(--mantine-color-blue-5);
+  max-width: 100%;
+}

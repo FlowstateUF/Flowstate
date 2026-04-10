@@ -1,4 +1,4 @@
-import { useState, useEffect } from "react";
+import { useState, useEffect, useRef } from "react";
 import {
   Container,
   Group,
@@ -121,6 +121,9 @@ export default function Summarize() {
   const [summary, setSummary] = useState(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
+  const [summaryId, setSummaryId] = useState(null);
+  const sessionStartedAtRef = useRef(null);
+  const sessionSentRef = useRef(false);
 
   async function fetchSummary() {
     if (!textbook_id || !chapter_title) {
@@ -136,6 +139,8 @@ export default function Summarize() {
 
     setLoading(true);
     setError("");
+    setSummaryId(null);
+    sessionSentRef.current = false;
 
     try {
       const res = await fetch(`${API_BASE}/api/generate/summary`, {
@@ -177,6 +182,8 @@ export default function Summarize() {
       }
 
       setSummary(summaryValue);
+      setSummaryId(data.summary_id || null);
+      sessionStartedAtRef.current = Date.now();
     } catch (e) {
       setError(String(e));
     } finally {
@@ -188,6 +195,45 @@ export default function Summarize() {
     fetchSummary();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [textbook_id, chapter_title, chapter_id]);
+
+  async function recordSummarySession() {
+    if (!summaryId || sessionSentRef.current) return;
+    const token = localStorage.getItem("access_token");
+    if (!token) return;
+
+    const started = sessionStartedAtRef.current;
+    const timeStudied = Math.max(
+      0,
+      Math.floor((Date.now() - (started ?? Date.now())) / 1000)
+    );
+
+    try {
+      const res = await fetch(`${API_BASE}/api/summary-sessions`, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${token}`,
+        },
+        body: JSON.stringify({
+          summary_id: summaryId,
+          time_studied: timeStudied,
+        }),
+      });
+      if (!res.ok) {
+        const err = await res.json().catch(() => ({}));
+        console.error("Summary session save failed:", err?.error || res.status);
+        return;
+      }
+      sessionSentRef.current = true;
+    } catch (e) {
+      console.error("Summary session save failed:", e);
+    }
+  }
+
+  async function handleReturnToDashboard() {
+    await recordSummarySession();
+    navigate("/dashboard");
+  }
 
   return (
     <main className="summarize-page">
@@ -221,7 +267,7 @@ export default function Summarize() {
         </Paper>
 
         <Group justify="flex-end" className="summarize-return">
-          <Button variant="default" onClick={() => navigate("/dashboard")}>
+          <Button variant="default" onClick={handleReturnToDashboard}>
             Return to Dashboard
           </Button>
         </Group>
