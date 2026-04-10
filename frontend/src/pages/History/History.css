@@ -263,6 +263,10 @@
   justify-content: center;
 }
 
+.history-progressWrap svg {
+  overflow: visible;
+}
+
 .history-progressLabelWrap {
   width: 100%;
   height: 100%;

@@ -50,7 +50,7 @@ export default function Account() {
       <NavBar isAuthed={true} />
 
       <main className="account-page">
-        <Container size="md">
+        <Container size="xl">
           <Paper withBorder radius="lg" p="xl" className="account-card">
             <Stack gap="lg">
 
@@ -69,12 +69,12 @@ export default function Account() {
 
               {/* Info */}
               <Stack gap="md">
-                <div>
+                <div className="account-infoSection">
                   <Text size="sm" c="dimmed">Username</Text>
                   <Text fw={600} size="lg">{user.username}</Text>
                 </div>
 
-                <div>
+                <div className="account-infoSection">
                   <Text size="sm" c="dimmed">Email</Text>
                   <Text fw={600} size="lg">{user.email}</Text>
                 </div>
@@ -83,7 +83,7 @@ export default function Account() {
               <Divider />
 
               {/* Logout */}
-              <Group justify="flex-start">
+              <Group justify="flex-start" className="account-actionRow">
                 <Button
                   color="red"
                   variant="light"

@@ -124,8 +124,18 @@
   border-radius: 18px;
 }
 
+.quiz-question-header {
+  margin-bottom: 2px;
+}
+
 .quiz-question-title {
   opacity: 0.9;
+  flex: 1;
+  min-width: 0;
+}
+
+.quiz-question-type {
+  flex-shrink: 0;
 }
 
 .quiz-question-text {

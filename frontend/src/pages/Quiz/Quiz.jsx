@@ -41,6 +41,12 @@ const QUIZ_MODES = [
   },
 ];
 
+function formatQuestionType(type) {
+  const value = (type || "").trim();
+  if (!value) return "";
+  return value.charAt(0).toUpperCase() + value.slice(1);
+}
+
 function normalizeQuestions(rawQuestions = []) {
   return rawQuestions.map((question, questionIndex) => ({
     title: `Question ${questionIndex + 1}`,
@@ -626,9 +632,25 @@ export default function Quiz() {
 
             <Paper withBorder radius="lg" p="xl" className="quiz-card">
               <Stack gap="sm">
-                <Text fw={700} className="quiz-question-title">
-                  {current.title}
-                </Text>
+                <Group
+                  justify="space-between"
+                  align="flex-start"
+                  gap="sm"
+                  className="quiz-question-header"
+                >
+                  <Text fw={700} className="quiz-question-title">
+                    {current.title}
+                  </Text>
+                  {current.type ? (
+                    <Badge
+                      variant="light"
+                      color={isPretest ? "orange" : "blue"}
+                      className="quiz-question-type"
+                    >
+                      {formatQuestionType(current.type)}
+                    </Badge>
+                  ) : null}
+                </Group>
                 <Text className="quiz-question-text">{current.prompt}</Text>
               </Stack>
             </Paper>

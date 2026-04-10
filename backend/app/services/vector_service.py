@@ -19,6 +19,26 @@ def upsert_chunks(chunks: list[dict], embeddings: list[list[float]]):
     qdrant.upsert(collection_name="chunks", points=points)
 
 def retrieve_context(user_id: str, textbook_id: str, query: str, top_k: int = 8, chapter_title: str = None) -> str:
+    rows = retrieve_relevant_chunks(
+        user_id=user_id,
+        textbook_id=textbook_id,
+        query=query,
+        top_k=top_k,
+        chapter_title=chapter_title,
+    )
+
+    parts = []
+    for row in rows:
+        text = (row.get("content") or "").strip()
+        if not text:
+            continue
+
+        citation = row.get("citation")
+        parts.append(f"{citation}: {text}" if citation else text)
+
+    return "\n\n".join(parts)
+
+def retrieve_relevant_chunks(user_id: str, textbook_id: str, query: str, top_k: int = 8, chapter_title: str = None) -> list[dict]:
     qvec = embed_query(query)
 
     must_filters = [
@@ -43,10 +63,7 @@ def retrieve_context(user_id: str, textbook_id: str, query: str, top_k: int = 8,
     )
 
     hits = res.points or []
-    if not hits:
-        return ""
-
-    parts = []
+    rows = []
     for p in hits:
         payload = p.payload or {}
         text = (payload.get("text") or payload.get("content") or "").strip()
@@ -60,9 +77,15 @@ def retrieve_context(user_id: str, textbook_id: str, query: str, top_k: int = 8,
             if ps is not None:
                 citation = f"Page {ps}" if pe in (None, ps) else f"Pages {ps}-{pe}"
 
-        parts.append(f"{citation}: {text}" if citation else text)
+        rows.append({
+            "content": text,
+            "citation": citation,
+            "page_number": payload.get("page_number") or payload.get("page_start"),
+            "chapter": payload.get("chapter"),
+            "score": getattr(p, "score", None),
+        })
 
-    return "\n\n".join(parts)
+    return rows
 
 def fetch_all_chunks(textbook_id: str, chapter_title: str, user_id: str) -> list[dict]:
     # Filter to only this chapter's chunks

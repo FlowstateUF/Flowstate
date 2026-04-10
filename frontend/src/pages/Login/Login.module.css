@@ -5,19 +5,19 @@
 
 /* LEFT side */
 .left {
-  flex: 0 0 900px;         
+  flex: 0 0 820px;
   display: flex;
   align-items: center;
   justify-content: center;
-  padding: 64px 36px;
+  padding: 48px 28px;
   background: #ffffff;
   border-right: 1px solid rgba(0, 0, 0, 0.08);
 }
 
 .form {
   width: 100%;
-  max-width: 500px;           
-  padding: 28px;
+  max-width: 460px;
+  padding: 24px;
 }
 
 .title {
@@ -29,7 +29,7 @@
 .right {
   flex: 1;
   background: #f6f8fb;
-  padding: 56px 80px;
+  padding: 44px 56px;
   display: flex;
   align-items: center;       
   align-items: center;
@@ -42,14 +42,14 @@
 }
 
 .brandLogo {
-  width: 64px;       
-  height: 64px;
-  margin-bottom: 22px;
+  width: 56px;
+  height: 56px;
+  margin-bottom: 18px;
 }
 
 .headline {
   margin: 0;
-  font-size: 70px;
+  font-size: 58px;
   letter-spacing: -1px; 
   line-height: 1.02;
   font-weight: 900;
@@ -58,10 +58,10 @@
 
 .subhead {
   margin-top: 16px;
-  font-size: 22px;
-  line-height: 1.5;
+  font-size: 19px;
+  line-height: 1.45;
   color: rgba(11, 18, 32, 0.72);
-  max-width: 560px;
+  max-width: 520px;
 }
 
 .accent {
