@@ -74,3 +74,26 @@ create table public.pretests (
   constraint pretests_textbook_id_fkey foreign key (textbook_id) references textbooks (id) on delete cascade,
   constraint pretests_chapter_id_fkey foreign key (chapter_id) references chapters (id) on delete cascade
 ) TABLESPACE pg_default;
+
+create table public.pretest_attempts (
+  id uuid not null default gen_random_uuid(),
+  user_id uuid not null,
+  textbook_id uuid not null,
+  chapter_id uuid not null,
+  pretest_id uuid not null,
+  status text not null default 'in_progress',
+  score integer null,
+  total_questions integer not null,
+  responses jsonb null,
+  draft_answers jsonb null default '[]'::jsonb,
+  current_question_index integer not null default 0,
+  started_at timestamp with time zone null default now(),
+  created_at timestamp with time zone null default now(),
+  completed_at timestamp with time zone null,
+  constraint pretest_attempts_pkey primary key (id),
+  constraint pretest_attempts_user_id_fkey foreign key (user_id) references users (id) on delete cascade,
+  constraint pretest_attempts_textbook_id_fkey foreign key (textbook_id) references textbooks (id) on delete cascade,
+  constraint pretest_attempts_chapter_id_fkey foreign key (chapter_id) references chapters (id) on delete cascade,
+  constraint pretest_attempts_pretest_id_fkey foreign key (pretest_id) references pretests (id) on delete cascade,
+  constraint pretest_attempts_user_chapter_key unique (user_id, chapter_id)
+) TABLESPACE pg_default;

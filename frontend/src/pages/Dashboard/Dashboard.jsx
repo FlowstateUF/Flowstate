@@ -10,69 +10,103 @@ import {
   Divider,
   Select,
   Button,
-  SimpleGrid,
   Progress,
+  Loader,
+  ActionIcon,
+  Tooltip,
   Badge,
 } from "@mantine/core";
-import { useNavigate } from "react-router-dom";
-import { useState, useEffect } from "react";
+import { IconChecklist, IconLock, IconQuestionMark } from "@tabler/icons-react";
+import { useEffect, useState } from "react";
+import { useLocation, useNavigate } from "react-router-dom";
 
 import NavBar from "../../components/NavBar";
+import { authFetch } from "../../utils/authFetch";
 import "./Dashboard.css";
+
+const API_BASE = "http://127.0.0.1:5001";
+const CUSTOM_COVERS_STORAGE_KEY = "customTextbookCovers";
+
+function createEmptyPretestStatus() {
+  return {
+    loading: false,
+    pretestReady: false,
+    completed: false,
+    questionCount: 0,
+    attempt: null,
+    error: "",
+  };
+}
 
 export default function Dashboard() {
   const navigate = useNavigate();
+  const location = useLocation();
 
-  const API_BASE = "http://127.0.0.1:5001";
+  const preferredTextbookId =
+    location.state?.textbookId ?? new URLSearchParams(location.search).get("textbook");
+  const preferredChapterId = location.state?.chapterId ?? null;
 
   const [selectedTextbook, setSelectedTextbook] = useState(null);
   const [selectedChapter, setSelectedChapter] = useState(null);
-  const [selectedDifficulty, setSelectedDifficulty] = useState("1");
 
   const [textbooks, setTextbooks] = useState([]);
   const [chapters, setChapters] = useState([]);
+  const [pretestStatus, setPretestStatus] = useState(createEmptyPretestStatus);
+  const [customCovers, setCustomCovers] = useState(() => {
+    try {
+      return JSON.parse(localStorage.getItem(CUSTOM_COVERS_STORAGE_KEY) || "{}");
+    } catch {
+      return {};
+    }
+  });
 
-  // load textbooks on page load
+  const selectedChapterOption = chapters.find((chapter) => chapter.value === selectedChapter);
+  const quizLocked = !pretestStatus.completed;
+  const canOpenPretest = pretestStatus.pretestReady || pretestStatus.completed;
+  const selectedCover = selectedTextbook ? customCovers[selectedTextbook] : null;
+
   useEffect(() => {
+    let active = true;
+
     async function loadTextbooks() {
-      const token = localStorage.getItem("access_token");
-      if (!token) return;
+      const response = await authFetch(`${API_BASE}/api/textbooks`);
 
-      try {
-        const res = await fetch(`${API_BASE}/api/textbooks`, {
-          headers: {
-            Authorization: `Bearer ${token}`,
-          },
-        });
-
-        const data = await res.json();
-
-        if (!res.ok) {
-          console.error(data.error || "Failed to load textbooks");
-          return;
-        }
-
-        const options = (data.textbooks || []).map((book) => ({
-          value: book.id,
-          label: book.display_title || book.title || "Untitled textbook",
-        }));
-
-        setTextbooks(options);
-
-        // optional: auto-select first textbook
-        if (options.length > 0) {
-          setSelectedTextbook(options[0].value);
-        }
-      } catch (e) {
-        console.error("Failed to load textbooks:", e);
+      if (response.status === 401) {
+        navigate("/login");
+        return;
       }
+
+      const payload = await response.json().catch(() => ({}));
+      if (!response.ok) {
+        console.error(payload.error || "Failed to load textbooks");
+        return;
+      }
+
+      const options = (payload.textbooks || []).map((book) => ({
+        value: book.id,
+        label: book.display_title || book.title || "Untitled textbook",
+      }));
+
+      if (!active) return;
+
+      setTextbooks(options);
+
+      const preferredOption = options.find((option) => option.value === preferredTextbookId);
+      setSelectedTextbook(preferredOption?.value || null);
     }
 
-    loadTextbooks();
-  }, []);
+    loadTextbooks().catch((error) => {
+      console.error("Failed to load textbooks:", error);
+    });
 
-  // load chapters whenever textbook changes
+    return () => {
+      active = false;
+    };
+  }, [navigate, preferredTextbookId]);
+
   useEffect(() => {
+    let active = true;
+
     async function loadChapters() {
       if (!selectedTextbook) {
         setChapters([]);
@@ -80,50 +114,159 @@ export default function Dashboard() {
         return;
       }
 
-      const token = localStorage.getItem("access_token");
-      if (!token) return;
+      const response = await authFetch(`${API_BASE}/api/textbooks/${selectedTextbook}/chapters`);
 
-      try {
-        const res = await fetch(
-          `${API_BASE}/api/textbooks/${selectedTextbook}/chapters`,
-          {
-            headers: {
-              Authorization: `Bearer ${token}`,
-            },
-          }
-        );
+      if (response.status === 401) {
+        navigate("/login");
+        return;
+      }
 
-        const data = await res.json();
+      const payload = await response.json().catch(() => ({}));
 
-        if (!res.ok) {
-          console.error(data.error || "Failed to load chapters");
-          setChapters([]);
-          setSelectedChapter(null);
-          return;
-        }
-
-        const options = (data.chapters || []).map((ch) => ({
-          value: ch.id,
-          label: ch.title,
-        }));
-
-        setChapters(options);
-
-        // reset selected chapter when textbook changes
-        if (options.length > 0) {
-          setSelectedChapter(options[0].value);
-        } else {
-          setSelectedChapter(null);
-        }
-      } catch (e) {
-        console.error("Failed to load chapters:", e);
+      if (!response.ok) {
+        console.error(payload.error || "Failed to load chapters");
+        if (!active) return;
         setChapters([]);
         setSelectedChapter(null);
+        return;
       }
+
+      const options = (payload.chapters || []).map((chapter) => ({
+        value: chapter.id,
+        label: chapter.title,
+      }));
+
+      if (!active) return;
+
+      setChapters(options);
+
+      const matchingPreferredChapter =
+        selectedTextbook === preferredTextbookId
+          ? options.find((option) => option.value === preferredChapterId)
+          : null;
+
+      setSelectedChapter(matchingPreferredChapter?.value || null);
     }
 
-    loadChapters();
-  }, [selectedTextbook]);
+    loadChapters().catch((error) => {
+      console.error("Failed to load chapters:", error);
+      if (!active) return;
+      setChapters([]);
+      setSelectedChapter(null);
+    });
+
+    return () => {
+      active = false;
+    };
+  }, [navigate, preferredChapterId, preferredTextbookId, selectedTextbook]);
+
+  useEffect(() => {
+    let active = true;
+
+    async function loadPretestStatus() {
+      if (!selectedTextbook || !selectedChapter) {
+        setPretestStatus(createEmptyPretestStatus());
+        return;
+      }
+
+      setPretestStatus((previous) => ({
+        ...previous,
+        loading: true,
+        error: "",
+      }));
+
+      const response = await authFetch(
+        `${API_BASE}/api/textbooks/${selectedTextbook}/chapters/${selectedChapter}/pretest/status`
+      );
+
+      if (response.status === 401) {
+        navigate("/login");
+        return;
+      }
+
+      const payload = await response.json().catch(() => ({}));
+
+      if (!active) return;
+
+      if (!response.ok) {
+        setPretestStatus({
+          ...createEmptyPretestStatus(),
+          error: payload.error || "Could not load pretest status.",
+        });
+        return;
+      }
+
+      setPretestStatus({
+        loading: false,
+        pretestReady: Boolean(payload.pretest_ready),
+        completed: Boolean(payload.completed),
+        questionCount: payload.question_count || 0,
+        attempt: payload.attempt || null,
+        error: payload.pretest_ready ? "" : "Pretest is not available for this chapter yet.",
+      });
+    }
+
+    loadPretestStatus().catch((error) => {
+      console.error("Failed to load pretest status:", error);
+      if (!active) return;
+      setPretestStatus({
+        ...createEmptyPretestStatus(),
+        error: "Could not load pretest status.",
+      });
+    });
+
+    return () => {
+      active = false;
+    };
+  }, [navigate, selectedChapter, selectedTextbook]);
+
+  useEffect(() => {
+    const handleStorage = () => {
+      try {
+        setCustomCovers(JSON.parse(localStorage.getItem(CUSTOM_COVERS_STORAGE_KEY) || "{}"));
+      } catch {
+        setCustomCovers({});
+      }
+    };
+
+    window.addEventListener("storage", handleStorage);
+    return () => window.removeEventListener("storage", handleStorage);
+  }, []);
+
+  const navigateWithChapter = (path, extraState = {}) => {
+    if (!selectedTextbook || !selectedChapter) {
+      return;
+    }
+
+    navigate(path, {
+      state: {
+        textbook_id: selectedTextbook,
+        chapter_id: selectedChapter,
+        chapter_title: selectedChapterOption?.label,
+        ...extraState,
+      },
+    });
+  };
+
+  const handlePretestClick = () => {
+    if (!canOpenPretest) {
+      return;
+    }
+
+    navigateWithChapter("/pretest", {
+      assessmentType: "pretest",
+    });
+  };
+
+  const handleQuizClick = () => {
+    if (!selectedTextbook || !selectedChapter || quizLocked) {
+      return;
+    }
+
+    navigateWithChapter("/quiz", {
+      assessmentType: "quiz",
+    });
+  };
 
   return (
     <>
@@ -132,7 +275,6 @@ export default function Dashboard() {
       <main className="dashboard-page">
         <Container size="lg">
           <Stack gap="xl">
-            {/* Top card */}
             <Paper withBorder p="xl" radius="md" className="dashboard-card">
               <Group
                 align="flex-start"
@@ -140,18 +282,16 @@ export default function Dashboard() {
                 wrap="nowrap"
                 className="dashboard-top-row"
               >
-                {/* Cover */}
                 <Box className="dashboard-cover">
                   <Image
-                    src={null}
+                    src={selectedCover || null}
                     alt="Textbook cover"
+                    className="dashboard-cover-image"
                     fallbackSrc="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='300' height='300'%3E%3Crect width='300' height='300' fill='%23e9ecef'/%3E%3Cpath d='M80 210l55-60 40 45 30-25 55 65H80z' fill='%23adb5bd'/%3E%3Ccircle cx='115' cy='120' r='18' fill='%23adb5bd'/%3E%3C/svg%3E"
-                    height={180}
                     fit="cover"
                   />
                 </Box>
 
-                {/* Textbook dropdown + placeholder lines */}
                 <Stack gap={10} className="dashboard-middle">
                   <Box className="dashboard-title-block">
                     <Select
@@ -161,63 +301,67 @@ export default function Dashboard() {
                       value={selectedTextbook}
                       onChange={setSelectedTextbook}
                     />
-
-                    <Text c="dimmed" size="sm" mt={6}>
-                      author • date • etc
-                    </Text>
                   </Box>
 
-                  <Stack gap={8} className="dashboard-text-lines">
-                    <Box className="dashboard-line" style={{ width: "85%" }} />
-                    <Box className="dashboard-line" style={{ width: "70%" }} />
-                    <Box className="dashboard-line" style={{ width: "55%" }} />
-                  </Stack>
-                </Stack>
-
-                {/* Controls */}
-                <Stack gap="sm" className="dashboard-controls">
-                  <Text fw={600}>Select the following to begin</Text>
-
-                  <SimpleGrid cols={2} spacing="sm">
+                  <Box className="dashboard-title-block">
                     <Select
-                      label="Chapters"
-                      placeholder="Select chapter"
+                      label="Chapter"
+                      placeholder={selectedTextbook ? "Select a chapter" : "Select a textbook first"}
                       data={chapters}
                       value={selectedChapter}
                       onChange={setSelectedChapter}
+                      disabled={!selectedTextbook}
                     />
-                    <Select
-                      label="Difficulty"
-                      data={[
-                        { value: "1", label: "1 - Recall" },
-                        { value: "2", label: "2 - Understand" },
-                        { value: "3", label: "3 - Apply" },
-                        { value: "4", label: "4 - Analyze" },
-                      ]}
-                      value={selectedDifficulty}
-                      onChange={setSelectedDifficulty}
-                    />
-                  </SimpleGrid>
+                  </Box>
+                </Stack>
+
+                <Stack gap="sm" className="dashboard-controls">
+                  <Text fw={600}>Select the following to begin</Text>
+
+                  <Stack gap={6} className="dashboard-pretest-row">
+                    <div className="dashboard-pretest-actions">
+                      <div className="dashboard-pretest-buttonWrap">
+                        <Button
+                          radius="xl"
+                          leftSection={<IconChecklist size={16} />}
+                          onClick={handlePretestClick}
+                          disabled={
+                            !selectedTextbook || !selectedChapter || pretestStatus.loading || !canOpenPretest
+                          }
+                        >
+                          {pretestStatus.completed ? "View Baseline" : "Take Pretest"}
+                        </Button>
+                      </div>
+
+                      <div className="dashboard-pretest-side">
+                        <Tooltip
+                          multiline
+                          w={220}
+                          withArrow
+                          label={`One-time pretest to gauge baseline knowledge.\n${pretestStatus.questionCount || 12} questions. One attempt only.`}
+                        >
+                          <ActionIcon variant="subtle" radius="xl" aria-label="Pretest info">
+                            <IconQuestionMark size={16} />
+                          </ActionIcon>
+                        </Tooltip>
+
+                        {pretestStatus.loading ? <Loader size="sm" /> : null}
+                      </div>
+                    </div>
+
+                    {pretestStatus.error ? (
+                      <Text size="sm" c="red" ta="center">
+                        {pretestStatus.error}
+                      </Text>
+                    ) : null}
+                  </Stack>
 
                   <Group gap="sm" className="dashboard-actions">
                     <Button
                       radius="xl"
                       fullWidth
-                      onClick={() => {
-                        if (!selectedTextbook || !selectedChapter) {
-                          alert("Select textbook and chapter first");
-                          return;
-                        }
-                        const chapterObj = chapters.find(
-                          (ch) => ch.value === selectedChapter
-                        );
-                        navigate("/Summarize", {
-                          state: {
-                            textbook_id: selectedTextbook,
-                            chapter_title: chapterObj?.label,
-                          },
-                        });
-                      }}
+                      onClick={() => navigateWithChapter("/summarize")}
+                      disabled={!selectedTextbook || !selectedChapter}
                     >
                       Summarize
                     </Button>
@@ -226,19 +370,8 @@ export default function Dashboard() {
                       variant="light"
                       radius="xl"
                       fullWidth
-                      onClick={() => {
-                        if (!selectedTextbook || !selectedChapter) {
-                          alert("Select textbook and chapter first");
-                          return;
-                        }
-                        const chapterObj = chapters.find((ch) => ch.value === selectedChapter);
-                        navigate("/flash", {
-                          state: {
-                            textbook_id: selectedTextbook,
-                            chapter_title: chapterObj?.label,
-                          },
-                        });
-                      }}
+                      onClick={() => navigateWithChapter("/flash")}
+                      disabled={!selectedTextbook || !selectedChapter}
                     >
                       Flashcards
                     </Button>
@@ -246,33 +379,27 @@ export default function Dashboard() {
                     <Button
                       radius="xl"
                       fullWidth
-                      onClick={() => {
-                      if (!selectedTextbook || !selectedChapter || !selectedDifficulty) {
-                        alert("Select textbook, chapter, and difficulty first");
-                        return;
+                      leftSection={quizLocked ? <IconLock size={16} /> : null}
+                      onClick={handleQuizClick}
+                      disabled={
+                        !selectedTextbook || !selectedChapter || pretestStatus.loading || quizLocked
                       }
-                      const chapterObj = chapters.find(
-                        (ch) => ch.value === selectedChapter
-                      );
-                      navigate("/quiz", {
-                        state: {
-                          textbook_id: selectedTextbook,
-                          chapter_title: chapterObj?.label,
-                          difficulty: selectedDifficulty,
-                        },
-                      });
-                    }}
                     >
                       Quizzes
                     </Button>
                   </Group>
+
+                  {quizLocked ? (
+                    <Text size="sm" c="dimmed" className="dashboard-lock-note">
+                      Complete the chapter pretest to unlock quizzes.
+                    </Text>
+                  ) : null}
                 </Stack>
               </Group>
 
               <Divider my="xl" />
             </Paper>
 
-            {/* Bottom card (hover blue border + click to stats) */}
             <Paper
               withBorder
               p="xl"
@@ -281,8 +408,8 @@ export default function Dashboard() {
               onClick={() => navigate("/stats")}
               role="button"
               tabIndex={0}
-              onKeyDown={(e) => {
-                if (e.key === "Enter" || e.key === " ") navigate("/stats");
+              onKeyDown={(event) => {
+                if (event.key === "Enter" || event.key === " ") navigate("/stats");
               }}
             >
               <Group
@@ -291,7 +418,6 @@ export default function Dashboard() {
                 wrap="nowrap"
                 className="dashboard-bottom-row"
               >
-                {/* Left info */}
                 <Stack gap="md" className="dashboard-bottom-left">
                   <Box>
                     <Title order={2}>Learning Dashboard</Title>
@@ -324,7 +450,6 @@ export default function Dashboard() {
                   </Text>
                 </Stack>
 
-                {/* Chart placeholder */}
                 <Box className="dashboard-chart">
                   <Box className="dashboard-chart-inner">
                     <svg width="90%" height="70%" viewBox="0 0 500 250">

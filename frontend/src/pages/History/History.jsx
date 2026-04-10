@@ -22,7 +22,14 @@ import {
 import NavBar from "../../components/NavBar";
 import { authFetch } from "../../utils/authFetch";
 import "./History.css";
-import { IconDotsVertical, IconPhotoUp, IconTrash } from "@tabler/icons-react";
+import {
+  IconChevronDown,
+  IconDotsVertical,
+  IconPhotoUp,
+  IconStar,
+  IconStarFilled,
+  IconTrash,
+} from "@tabler/icons-react";
 
 const API_BASE = "http://localhost:5001";
 const PENDING_STORAGE_KEY = "pendingTextbooks";
@@ -93,6 +100,7 @@ function normalizeTextbook(raw, { previous = {}, pending = {} } = {}) {
   return {
     id: raw.id,
     title: raw.title || raw.filename || pending.title || previous.title || "Untitled Textbook",
+    is_starred: raw.is_starred ?? pending.is_starred ?? previous.is_starred ?? true,
     status: raw.status || pending.status || previous.status || "processing",
     stage: raw.stage || raw.status || pending.stage || previous.stage || "processing",
     progress:
@@ -139,6 +147,7 @@ function buildPendingOnlyTextbook(pending, previous = {}) {
   return {
     id: pending.id,
     title: pending.title || previous.title || "Untitled Textbook",
+    is_starred: pending.is_starred ?? previous.is_starred ?? true,
     status: pending.status || previous.status || "processing",
     stage: pending.stage || previous.stage || pending.status || "processing",
     progress:
@@ -175,6 +184,30 @@ function sortTextbooks(books) {
 
     return bTime - aTime;
   });
+}
+
+function mergeTextbooks(rawBooks, previousBooks, pendingList) {
+  const previousById = Object.fromEntries(previousBooks.map((book) => [book.id, book]));
+  const pendingById = Object.fromEntries(pendingList.map((book) => [book.id, book]));
+
+  const mergedFromBackend = rawBooks.map((raw) =>
+    normalizeTextbook(raw, {
+      previous: previousById[raw.id],
+      pending: pendingById[raw.id],
+    })
+  );
+
+  const seenIds = new Set(mergedFromBackend.map((book) => book.id));
+
+  const pendingOnly = pendingList
+    .filter((pendingBook) => !seenIds.has(pendingBook.id))
+    .map((pendingBook) => buildPendingOnlyTextbook(pendingBook, previousById[pendingBook.id]));
+
+  return sortTextbooks([...mergedFromBackend, ...pendingOnly]);
+}
+
+function upsertTextbook(list, nextBook) {
+  return sortTextbooks([...list.filter((book) => book.id !== nextBook.id), nextBook]);
 }
 
 function getBookPresentation(book, showCompleteSplash) {
@@ -258,6 +291,7 @@ export default function History() {
   const navigate = useNavigate();
 
   const [textbooks, setTextbooks] = useState([]);
+  const [allTextbooks, setAllTextbooks] = useState([]);
   const [loading, setLoading] = useState(true);
   const [pageError, setPageError] = useState("");
   const [toast, setToast] = useState(null);
@@ -265,6 +299,7 @@ export default function History() {
   const [manageBook, setManageBook] = useState(null);
   const [deleteBook, setDeleteBook] = useState(null);
   const [deleteConfirmText, setDeleteConfirmText] = useState("");
+  const [starUpdatingIds, setStarUpdatingIds] = useState({});
   const [renameTitle, setRenameTitle] = useState("");
   const [customCovers, setCustomCovers] = useState(() => {
     try {
@@ -462,43 +497,85 @@ const handleCoverUpload = (bookId, file) => {
     }
   };
 
-  const fetchTextbooks = useCallback(async () => {
-    try {
-      const response = await authFetch(`${API_BASE}/api/textbooks`);
+  const handleStarToggle = async (book, nextStarred) => {
+    if (!book?.id) return;
 
-      if (response.status === 401) {
-        navigate("/login");
-        return;
-      }
+    setStarUpdatingIds((previous) => ({ ...previous, [book.id]: true }));
+
+    try {
+      const response = await authFetch(`${API_BASE}/api/textbooks/${book.id}/star`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ is_starred: nextStarred }),
+      });
 
       const payload = await response.json().catch(() => ({}));
 
       if (!response.ok) {
-        throw new Error(payload.error || "Could not load textbooks.");
+        throw new Error(payload.error || "Could not update textbook visibility.");
       }
 
-      const rawBooks = Array.isArray(payload) ? payload : payload.textbooks || [];
+      setAllTextbooks((previousBooks) => upsertTextbook(previousBooks, payload));
+      setTextbooks((previousBooks) =>
+        nextStarred
+          ? upsertTextbook(previousBooks, payload)
+          : previousBooks.filter((existingBook) => existingBook.id !== payload.id)
+      );
+      setManageBook((current) => (current?.id === payload.id ? payload : current));
+
+      setToast({
+        color: "teal",
+        title: nextStarred ? "Textbook added" : "Textbook hidden",
+        message: nextStarred
+          ? "This textbook now appears on the Textbooks page."
+          : "This textbook was removed from the Textbooks page.",
+      });
+    } catch (error) {
+      console.error("Failed to update textbook visibility:", error);
+      setToast({
+        color: "red",
+        title: "Update failed",
+        message: error.message || "Could not update textbook visibility.",
+      });
+      fetchTextbooks();
+    } finally {
+      setStarUpdatingIds((previous) => {
+        const next = { ...previous };
+        delete next[book.id];
+        return next;
+      });
+    }
+  };
+
+  const fetchTextbooks = useCallback(async () => {
+    try {
+      const [starredResponse, allResponse] = await Promise.all([
+        authFetch(`${API_BASE}/api/textbooks`),
+        authFetch(`${API_BASE}/api/textbooks?all=true`),
+      ]);
+
+      if (starredResponse.status === 401 || allResponse.status === 401) {
+        navigate("/login");
+        return;
+      }
+
+      const starredPayload = await starredResponse.json().catch(() => ({}));
+      const allPayload = await allResponse.json().catch(() => ({}));
+
+      if (!starredResponse.ok || !allResponse.ok) {
+        throw new Error(
+          starredPayload.error || allPayload.error || "Could not load textbooks."
+        );
+      }
+
+      const rawStarredBooks = Array.isArray(starredPayload)
+        ? starredPayload
+        : starredPayload.textbooks || [];
+      const rawAllBooks = Array.isArray(allPayload) ? allPayload : allPayload.textbooks || [];
       const pendingList = readPendingTextbooks();
 
-      setTextbooks((previousBooks) => {
-        const previousById = Object.fromEntries(previousBooks.map((book) => [book.id, book]));
-        const pendingById = Object.fromEntries(pendingList.map((book) => [book.id, book]));
-
-        const mergedFromBackend = rawBooks.map((raw) =>
-          normalizeTextbook(raw, {
-            previous: previousById[raw.id],
-            pending: pendingById[raw.id],
-          })
-        );
-
-        const seenIds = new Set(mergedFromBackend.map((book) => book.id));
-
-        const pendingOnly = pendingList
-          .filter((pendingBook) => !seenIds.has(pendingBook.id))
-          .map((pendingBook) => buildPendingOnlyTextbook(pendingBook, previousById[pendingBook.id]));
-
-        return sortTextbooks([...mergedFromBackend, ...pendingOnly]);
-      });
+      setTextbooks((previousBooks) => mergeTextbooks(rawStarredBooks, previousBooks, pendingList));
+      setAllTextbooks((previousBooks) => mergeTextbooks(rawAllBooks, previousBooks, pendingList));
 
       setPageError("");
     } catch (error) {
@@ -506,14 +583,8 @@ const handleCoverUpload = (bookId, file) => {
 
       const pendingList = readPendingTextbooks();
       if (pendingList.length > 0) {
-        setTextbooks((previousBooks) => {
-          const previousById = Object.fromEntries(previousBooks.map((book) => [book.id, book]));
-          return sortTextbooks(
-            pendingList.map((pendingBook) =>
-              buildPendingOnlyTextbook(pendingBook, previousById[pendingBook.id])
-            )
-          );
-        });
+        setTextbooks((previousBooks) => mergeTextbooks([], previousBooks, pendingList));
+        setAllTextbooks((previousBooks) => mergeTextbooks([], previousBooks, pendingList));
       }
 
       setPageError("Could not load your textbooks right now.");
@@ -534,6 +605,9 @@ const handleCoverUpload = (bookId, file) => {
       }
 
       setTextbooks((previousBooks) =>
+        previousBooks.filter((book) => book.id !== bookId)
+      );
+      setAllTextbooks((previousBooks) =>
         previousBooks.filter((book) => book.id !== bookId)
       );
 
@@ -615,6 +689,13 @@ const handleCoverUpload = (bookId, file) => {
         )
       )
     );
+    setAllTextbooks((previousBooks) =>
+      sortTextbooks(
+        previousBooks.map((book) =>
+          updateMap[book.id] ? { ...book, ...updateMap[book.id] } : book
+        )
+      )
+    );
   }, []);
 
   useEffect(() => {
@@ -645,7 +726,7 @@ const handleCoverUpload = (bookId, file) => {
   }, [fetchTextbooks, navigate]);
 
   useEffect(() => {
-    const activeBookIds = textbooks
+    const activeBookIds = allTextbooks
       .filter((book) => isInFlight(book.status) || isInFlight(book.stage))
       .map((book) => book.id);
 
@@ -658,10 +739,10 @@ const handleCoverUpload = (bookId, file) => {
     }, POLL_INTERVAL_MS);
 
     return () => window.clearInterval(intervalId);
-  }, [pollStatuses, textbooks]);
+  }, [allTextbooks, pollStatuses]);
 
   useEffect(() => {
-    if (!textbooks.length) return;
+    if (!allTextbooks.length) return;
 
     const pendingList = readPendingTextbooks();
     if (!pendingList.length) return;
@@ -670,7 +751,7 @@ const handleCoverUpload = (bookId, file) => {
     let nextPending = [...pendingList];
     let changed = false;
 
-    textbooks.forEach((book) => {
+    allTextbooks.forEach((book) => {
       if (!pendingIds.has(book.id)) return;
 
       const status = String(book.status || "").toLowerCase();
@@ -719,7 +800,7 @@ const handleCoverUpload = (bookId, file) => {
     if (changed) {
       writePendingTextbooks(nextPending);
     }
-  }, [textbooks]);
+  }, [allTextbooks]);
 
   useEffect(() => {
     if (!toast) return;
@@ -732,8 +813,10 @@ const handleCoverUpload = (bookId, file) => {
   }, [toast]);
 
   useEffect(() => {
+    const timerMap = completionTimersRef.current;
+
     return () => {
-      Object.values(completionTimersRef.current).forEach((timerId) => {
+      Object.values(timerMap).forEach((timerId) => {
         window.clearTimeout(timerId);
       });
     };
@@ -840,10 +923,22 @@ const handleCoverUpload = (bookId, file) => {
     </div>
 
     <div className="history-manageSection">
-      <Text fw={600}>Hide / archive</Text>
+      <Text fw={600}>Visibility</Text>
       <Text size="sm" c="dimmed">
-        We can wire this next after delete and rename are working.
+        {manageBook?.is_starred !== false
+          ? "This textbook currently appears on the Textbooks page."
+          : "This textbook is currently hidden from the Textbooks page."}
       </Text>
+      {manageBook ? (
+        <Button
+          variant={manageBook.is_starred !== false ? "light" : "filled"}
+          onClick={() => handleStarToggle(manageBook, manageBook.is_starred === false)}
+          disabled={Boolean(starUpdatingIds[manageBook.id])}
+          className="history-manageSecondaryBtn"
+        >
+          {manageBook.is_starred !== false ? "Hide from Textbooks" : "Show on Textbooks"}
+        </Button>
+      ) : null}
     </div>
   </Stack>
 </Modal>
@@ -893,12 +988,88 @@ const handleCoverUpload = (bookId, file) => {
         <Container size="lg">
           <Stack gap="md">
             <Box>
-              <Title order={1} className="history-title">
-                Welcome back!
-              </Title>
-              <Text c="dimmed" className="history-subtitle">
-                Click on a textbook to continue your learning.
-              </Text>
+              <Group justify="space-between" align="flex-end" className="history-headingRow">
+                <Box>
+                  <Title order={1} className="history-title">
+                    Welcome back!
+                  </Title>
+                  <Text c="dimmed" className="history-subtitle">
+                    Click on a textbook to continue your learning.
+                  </Text>
+                </Box>
+
+                <Menu withinPortal position="bottom-start" shadow="md" width={360}>
+                  <Menu.Target>
+                    <button type="button" className="history-allBooksTrigger">
+                      <span>All Textbooks</span>
+                      <IconChevronDown size={16} />
+                    </button>
+                  </Menu.Target>
+
+                  <Menu.Dropdown className="history-allBooksDropdown">
+                    <Text fw={700} size="sm">
+                      Choose which books stay on this page
+                    </Text>
+                    <Text c="dimmed" size="xs" mt={4} mb="sm">
+                      Star a textbook to keep it in your main textbook list.
+                    </Text>
+
+                    <Stack gap="xs">
+                      {allTextbooks.length ? (
+                        allTextbooks.map((book) => {
+                          const isStarred = book.is_starred !== false;
+                          const clickable = CLICKABLE_STATUSES.has(
+                            String(book.status || "").toLowerCase()
+                          );
+
+                          return (
+                            <div key={book.id} className="history-allBooksRow">
+                              <button
+                                type="button"
+                                className="history-allBooksLink"
+                                onClick={() => clickable && goToBook(book)}
+                                disabled={!clickable}
+                              >
+                                <span className="history-allBooksTitle">
+                                  {trimPdfExtension(book.title)}
+                                </span>
+                                <span className="history-allBooksMeta">
+                                  {book.stageLabel || book.status || "Textbook"}
+                                </span>
+                              </button>
+
+                              <button
+                                type="button"
+                                className={`history-starBtn ${isStarred ? "is-active" : ""}`}
+                                onClick={(event) => {
+                                  event.stopPropagation();
+                                  handleStarToggle(book, !isStarred);
+                                }}
+                                aria-label={
+                                  isStarred
+                                    ? `Hide ${trimPdfExtension(book.title)}`
+                                    : `Show ${trimPdfExtension(book.title)}`
+                                }
+                                disabled={Boolean(starUpdatingIds[book.id])}
+                              >
+                                {isStarred ? (
+                                  <IconStarFilled size={18} />
+                                ) : (
+                                  <IconStar size={18} />
+                                )}
+                              </button>
+                            </div>
+                          );
+                        })
+                      ) : (
+                        <Text c="dimmed" size="sm">
+                          No textbooks yet.
+                        </Text>
+                      )}
+                    </Stack>
+                  </Menu.Dropdown>
+                </Menu>
+              </Group>
             </Box>
 
             {pageError && (
@@ -907,7 +1078,7 @@ const handleCoverUpload = (bookId, file) => {
               </Paper>
             )}
 
-            {loading && textbooks.length === 0 ? (
+            {loading && allTextbooks.length === 0 ? (
               <div className="history-loadingCard">
                 <div className="history-loadingInner">
                   <Loader size={56} />
@@ -921,9 +1092,15 @@ const handleCoverUpload = (bookId, file) => {
               </div>
             ) : textbooks.length === 0 ? (
               <Paper withBorder radius="md" className="history-empty">
-                <Text fw={600}>No textbooks yet</Text>
+                <Text fw={600}>
+                  {allTextbooks.length === 0
+                    ? "No textbooks yet"
+                    : "No favorited textbooks to view"}
+                </Text>
                 <Text c="dimmed" size="sm" mt={6}>
-                  Upload your first PDF from the Home page and it will appear here automatically.
+                  {allTextbooks.length === 0
+                    ? "Upload your first PDF from the Home page and it will appear here automatically."
+                    : "Open All Textbooks above and star the books you want to keep on this page."}
                 </Text>
               </Paper>
             ) : (
