@@ -1183,7 +1183,6 @@ def register_routes(app):
         textbook_id = data.get("textbook_id")
         chapter_title = (data.get("chapter_title") or "").strip()
         chapter_id = data.get("chapter_id")
-        difficulty = data.get("difficulty")
         num_cards = int(data.get("num_cards") or 5)
 
         if not textbook_id:
@@ -1194,21 +1193,6 @@ def register_routes(app):
         
         if not chapter_id:
             return jsonify({"error": "chapter_id required"}), 400
-        
-        difficulty_map = {
-            "1": "recall",
-            "2": "understand",
-            "3": "apply",
-            "4": "analyze",
-            "recall": "recall",
-            "understand": "understand",
-            "apply": "apply",
-            "analyze": "analyze",
-        }
-
-        difficulty_type = difficulty_map.get(difficulty)
-        if not difficulty_type:
-            return jsonify({"error": "difficulty must be 1-4 or a valid type"}), 400
 
         if num_cards < 1 or num_cards > 15:
             return jsonify({"error": "num_cards must be between 1 and 15"}), 400
@@ -1252,7 +1236,6 @@ def register_routes(app):
                     card["front"], 
                     card["back"], 
                     card["citation"],
-                    difficulty_type
             ))
 
         if not added_cards:
