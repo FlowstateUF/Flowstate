@@ -35,6 +35,7 @@ export default function QuizResults() {
     textbook_id,
     chapter_id,
     chapter_title,
+    chapter_id,
     difficulty,
     canRetake = assessmentType !== "pretest",
   } = state;

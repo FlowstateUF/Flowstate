@@ -115,20 +115,57 @@
   flex: 1;
 }
 
-.dashboard-chart {
-  width: 420px;
-  border-radius: 12px;
+.dashboard-chart-activity {
+  flex: 1;
+  min-width: min(100%, 320px);
+  min-height: 240px;
+  background: var(--mantine-color-gray-0);
   border: 1px solid var(--mantine-color-gray-4);
-  background: var(--mantine-color-gray-9);
-  position: relative;
-  overflow: hidden;
+  border-radius: 12px;
+  padding: 12px 16px 8px;
 }
 
-.dashboard-chart-inner {
-  position: absolute;
-  inset: 0;
-  display: grid;
-  place-items: center;
+.dashboard-chart-panel {
+  width: 100%;
+}
+
+.dashboard-activity-svg-wrap {
+  overflow-x: auto;
+}
+
+.dashboard-activity-legend {
+  flex-wrap: wrap;
+}
+
+.dashboard-act-dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  display: inline-block;
+}
+
+.dashboard-act-dot-0 {
+  background: var(--mantine-color-blue-6);
+}
+
+.dashboard-act-dot-1 {
+  background: var(--mantine-color-violet-5);
+}
+
+.dashboard-act-dot-2 {
+  background: var(--mantine-color-teal-6);
+}
+
+.dashboard-act-bar-0 {
+  fill: var(--mantine-color-blue-5);
+}
+
+.dashboard-act-bar-1 {
+  fill: var(--mantine-color-violet-4);
+}
+
+.dashboard-act-bar-2 {
+  fill: var(--mantine-color-teal-5);
 }
 
 
@@ -151,6 +188,16 @@
   outline-offset: 2px;
 }
 
+.dashboard-learning-summary.dashboard-clickable:disabled {
+  cursor: not-allowed;
+  opacity: 0.7;
+}
+
+.dashboard-learning-hint {
+  align-self: center;
+  padding: 8px 0;
+}
+
 
 @media (max-width: 900px) {
   .dashboard-page {
@@ -163,12 +210,12 @@
   }
 
   .dashboard-controls,
-  .dashboard-chart {
+  .dashboard-chart-activity {
     width: 100%;
   }
 
-  .dashboard-chart {
-    height: 260px;
+  .dashboard-chart-activity {
+    min-height: 260px;
   }
 
   .dashboard-actions button {

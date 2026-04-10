@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useState, useRef } from "react";
 import {
   Container,
   Group,
@@ -17,7 +17,7 @@ export default function Flash() {
   const location = useLocation();
   const navigate = useNavigate();
 
-  const { textbook_id, chapter_title } = location.state || {};
+  const { textbook_id, chapter_title, chapter_id, difficulty } = location.state || {};
 
   const API_BASE = "http://127.0.0.1:5001";
 
@@ -26,12 +26,15 @@ export default function Flash() {
   const [index, setIndex] = useState(0);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
+  const [flashcardSetId, setFlashcardSetId] = useState(null);
+  const sessionStartedAtRef = useRef(null);
+  const sessionSentRef = useRef(false);
 
   const currentCard = cards[index] || null;
 
   async function fetchFlashcards() {
-    if (!textbook_id || !chapter_title) {
-      setError("Missing textbook_id or chapter_title. Go back and select a textbook and chapter.");
+    if (!textbook_id || !chapter_title || !difficulty) {
+      setError("Missing textbook, chapter, or difficulty. Go back and select a textbook and chapter.");
       return;
     }
 
@@ -44,6 +47,8 @@ export default function Flash() {
     setLoading(true);
     setError("");
     setFlipped(false);
+    setFlashcardSetId(null);
+    sessionSentRef.current = false;
 
     try {
       const res = await fetch(`${API_BASE}/api/generate/flashcards`, {
@@ -55,6 +60,8 @@ export default function Flash() {
         body: JSON.stringify({
           textbook_id,
           chapter_title,
+          chapter_id,
+          difficulty,
           num_cards: 5,
         }),
       });
@@ -89,6 +96,8 @@ export default function Flash() {
 
       setCards(flashcards);
       setIndex(0);
+      setFlashcardSetId(data.flashcard_set_id || null);
+      sessionStartedAtRef.current = Date.now();
     } catch (e) {
       setError(String(e));
     } finally {
@@ -99,7 +108,7 @@ export default function Flash() {
   useEffect(() => {
     fetchFlashcards();
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [textbook_id, chapter_title]);
+  }, [textbook_id, chapter_title, chapter_id]);
 
   function goPrev() {
     setFlipped(false);
@@ -109,6 +118,45 @@ export default function Flash() {
   function goNext() {
     setFlipped(false);
     setIndex((i) => Math.min(cards.length - 1, i + 1));
+  }
+
+  async function recordFlashcardSession() {
+    if (!flashcardSetId || sessionSentRef.current) return;
+    const token = localStorage.getItem("access_token");
+    if (!token) return;
+
+    const started = sessionStartedAtRef.current;
+    const timeStudied = Math.max(
+      0,
+      Math.floor((Date.now() - (started ?? Date.now())) / 1000)
+    );
+
+    try {
+      const res = await fetch(`${API_BASE}/api/flashcard-sessions`, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${token}`,
+        },
+        body: JSON.stringify({
+          flashcard_set_id: flashcardSetId,
+          time_studied: timeStudied,
+        }),
+      });
+      if (!res.ok) {
+        const err = await res.json().catch(() => ({}));
+        console.error("Flashcard session save failed:", err?.error || res.status);
+        return;
+      }
+      sessionSentRef.current = true;
+    } catch (e) {
+      console.error("Flashcard session save failed:", e);
+    }
+  }
+
+  async function handleReturnToDashboard() {
+    await recordFlashcardSession();
+    navigate("/dashboard");
   }
 
   return (
@@ -203,11 +251,11 @@ export default function Flash() {
                 <Button variant="light" onClick={fetchFlashcards} disabled={loading}>
                   Regenerate
                 </Button>
-              </Group>            
+              </Group>
             </>
           )}
           <Group justify="flex-end" className="flash-return">
-            <Button variant="default" onClick={() => navigate("/dashboard")}>
+            <Button variant="default" onClick={handleReturnToDashboard}>
               Return to Dashboard
             </Button>
           </Group>

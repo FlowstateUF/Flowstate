@@ -1,5 +1,4 @@
-import hashlib
-import re, time, traceback
+import hashlib, re, time, traceback
 from flask import request, jsonify
 from openai import OpenAI
 from app.services.llm_service import LLMService
@@ -22,6 +21,7 @@ from app.services.supabase_service import (
     get_pretest_attempt,
     get_textbook,
     get_textbook_info,
+    get_textbook_dashboard_snapshot,
     get_toc,
     get_user_by_id, 
     list_user_textbooks,
@@ -31,7 +31,18 @@ from app.services.supabase_service import (
     set_textbook_starred_for_user,
     complete_pretest_attempt,
     store_toc,
-    upload_textbook_to_supabase
+    upload_textbook_to_supabase,
+    create_flashcard_set,
+    add_flashcard,
+    create_quiz,
+    add_quiz_question,
+    create_summary,
+    submit_quiz_attempt,
+    store_flashcard_session,
+    store_summary_session,
+    quiz_owned_by_user,
+    flashcard_set_owned_by_user,
+    summary_owned_by_user,
 )
 
 from app.services.textbook_service import extract_toc
@@ -559,6 +570,131 @@ def register_routes(app):
         }), 201
 
 
+    @app.get("/api/textbooks/<textbook_id>/dashboard")
+    @jwt_required()
+    def get_textbook_dashboard(textbook_id):
+        user_id = get_jwt_identity()
+
+        owned = get_textbook(user_id, textbook_id)
+        if not owned.data:
+            return jsonify({"error": "Textbook not found or unauthorized"}), 404
+
+        recent_limit = request.args.get("recent_limit", default=8, type=int) or 8
+        snapshot = get_textbook_dashboard_snapshot(
+            user_id, textbook_id, recent_limit=recent_limit
+        )
+        if not snapshot:
+            return jsonify({"error": "Textbook not found or unauthorized"}), 404
+
+        return jsonify(snapshot), 200
+
+
+    @app.post("/api/quiz-attempts")
+    @jwt_required()
+    def post_quiz_attempt():
+        user_id = get_jwt_identity()
+        data = request.get_json(silent=True) or {}
+
+        quiz_id = data.get("quiz_id")
+        answers = data.get("answers")
+        score = data.get("score")
+        total_questions = data.get("total_questions")
+        time_studied = data.get("time_studied", 0)
+
+        if not quiz_id:
+            return jsonify({"error": "quiz_id is required"}), 400
+        if not isinstance(answers, dict):
+            return jsonify({"error": "answers must be a JSON object"}), 400
+        try:
+            score = int(score)
+            total_questions = int(total_questions)
+            time_studied = int(time_studied)
+        except (TypeError, ValueError):
+            return jsonify({"error": "score, total_questions, and time_studied must be integers"}), 400
+
+        if total_questions < 1:
+            return jsonify({"error": "total_questions must be at least 1"}), 400
+        if score < 0 or score > total_questions:
+            return jsonify({"error": "score must be between 0 and total_questions"}), 400
+        if time_studied < 0:
+            return jsonify({"error": "time_studied must be non-negative"}), 400
+
+        if not quiz_owned_by_user(str(quiz_id), str(user_id)):
+            return jsonify({"error": "Quiz not found or unauthorized"}), 404
+
+        try:
+            record = submit_quiz_attempt(
+                str(user_id),
+                str(quiz_id),
+                answers,
+                score,
+                total_questions,
+                time_studied,
+            )
+        except Exception as e:
+            return jsonify({"error": "Failed to save attempt", "details": str(e)}), 500
+
+        return jsonify({"status": "success", "attempt": record}), 201
+
+
+    @app.post("/api/flashcard-sessions")
+    @jwt_required()
+    def post_flashcard_session():
+        user_id = get_jwt_identity()
+        data = request.get_json(silent=True) or {}
+
+        flashcard_set_id = data.get("flashcard_set_id")
+        time_studied = data.get("time_studied", 0)
+
+        if not flashcard_set_id:
+            return jsonify({"error": "flashcard_set_id is required"}), 400
+        try:
+            time_studied = int(time_studied)
+        except (TypeError, ValueError):
+            return jsonify({"error": "time_studied must be an integer"}), 400
+        if time_studied < 0:
+            return jsonify({"error": "time_studied must be non-negative"}), 400
+
+        if not flashcard_set_owned_by_user(str(flashcard_set_id), str(user_id)):
+            return jsonify({"error": "Flashcard set not found or unauthorized"}), 404
+
+        try:
+            record = store_flashcard_session(str(user_id), str(flashcard_set_id), time_studied)
+        except Exception as e:
+            return jsonify({"error": "Failed to save session", "details": str(e)}), 500
+
+        return jsonify({"status": "success", "session": record}), 201
+
+
+    @app.post("/api/summary-sessions")
+    @jwt_required()
+    def post_summary_session():
+        user_id = get_jwt_identity()
+        data = request.get_json(silent=True) or {}
+
+        summary_id = data.get("summary_id")
+        time_studied = data.get("time_studied", 0)
+
+        if not summary_id:
+            return jsonify({"error": "summary_id is required"}), 400
+        try:
+            time_studied = int(time_studied)
+        except (TypeError, ValueError):
+            return jsonify({"error": "time_studied must be an integer"}), 400
+        if time_studied < 0:
+            return jsonify({"error": "time_studied must be non-negative"}), 400
+
+        if not summary_owned_by_user(str(summary_id), str(user_id)):
+            return jsonify({"error": "Summary not found or unauthorized"}), 404
+
+        try:
+            record = store_summary_session(str(user_id), str(summary_id), time_studied)
+        except Exception as e:
+            return jsonify({"error": "Failed to save session", "details": str(e)}), 500
+
+        return jsonify({"status": "success", "session": record}), 201
+
+
     # ** NaviGator Routes **
 
     # test this by using curl '-X POST http://127.0.0.1:5001/api/test-recall' in the terminal after running the Flask app
@@ -600,12 +736,16 @@ def register_routes(app):
 
         textbook_id = data.get("textbook_id")
         chapter_title = (data.get("chapter_title") or "").strip()
+        chapter_id = data.get("chapter_id")
 
         if not textbook_id:
             return jsonify({"error": "textbook_id required"}), 400
 
         if not chapter_title:
             return jsonify({"error": "chapter_title required"}), 400
+        
+        if not chapter_id:
+            return jsonify({"error": "chapter_id required"}), 400
 
         owned = get_textbook(user_id, textbook_id)
         if not owned.data:
@@ -630,10 +770,21 @@ def register_routes(app):
         llm = LLMService(api_key=settings.NAVIGATOR_API_KEY)
         result = llm.generate_summary(context=context, temp=0.3)
 
+        summary_title = f"{chapter_title} Summary"
+        summary = create_summary(
+            user_id,
+            textbook_id,
+            chapter_id,
+            summary_title,
+            result.get("summary") or ""
+        )
+
         return jsonify({
             "status": "success",
             "textbook_id": textbook_id,
             "chapter_title": chapter_title,
+            "chapter_id": chapter_id,
+            "summary_id": summary["id"],
             "chunks_used": len(rows),
             **result
         }), 200
@@ -647,6 +798,8 @@ def register_routes(app):
 
         textbook_id = data.get("textbook_id")
         chapter_title = (data.get("chapter_title") or "").strip()
+        chapter_id = data.get("chapter_id")
+        difficulty = data.get("difficulty")
         num_cards = int(data.get("num_cards") or 5)
 
         if not textbook_id:
@@ -654,6 +807,24 @@ def register_routes(app):
 
         if not chapter_title:
             return jsonify({"error": "chapter_title required"}), 400
+        
+        if not chapter_id:
+            return jsonify({"error": "chapter_id required"}), 400
+        
+        difficulty_map = {
+            "1": "recall",
+            "2": "understand",
+            "3": "apply",
+            "4": "analyze",
+            "recall": "recall",
+            "understand": "understand",
+            "apply": "apply",
+            "analyze": "analyze",
+        }
+
+        difficulty_type = difficulty_map.get(difficulty)
+        if not difficulty_type:
+            return jsonify({"error": "difficulty must be 1-4 or a valid type"}), 400
 
         if num_cards < 1 or num_cards > 15:
             return jsonify({"error": "num_cards must be between 1 and 15"}), 400
@@ -690,13 +861,34 @@ def register_routes(app):
             temp=0.3
         )
 
+        flashcards = result.get("flashcards") or []
+        if not isinstance(flashcards, list):
+            flashcards = []
+
+        set_title = f"{chapter_title} Flashcards"
+        flashcard_set = create_flashcard_set(user_id, set_title, textbook_id, chapter_id)
+
+        added_cards = []
+        for card in flashcards:
+            added_cards.append(
+                add_flashcard(
+                    flashcard_set["id"], 
+                    card["front"], 
+                    card["back"], 
+                    card["citation"],
+                    difficulty_type
+            ))
+
+        if not added_cards:
+            return jsonify({"error": "No flashcards were generated."}), 500
+
         return jsonify({
             "status": "success",
             "textbook_id": textbook_id,
             "chapter_title": chapter_title,
-            "flashcards": result.get("flashcards", [])
-        }), 200
-    
+            "flashcard_set_id": flashcard_set["id"],
+            "flashcards": result.get("flashcards") or []
+        }), 201
 
     @app.post("/api/generate/quiz")
     @jwt_required()
@@ -706,6 +898,7 @@ def register_routes(app):
 
         textbook_id = data.get("textbook_id")
         chapter_title = (data.get("chapter_title") or "").strip()
+        chapter_id = data.get("chapter_id")
         difficulty = str(data.get("difficulty") or "1")
         num_questions = int(data.get("num_questions") or 5)
 
@@ -714,6 +907,9 @@ def register_routes(app):
 
         if not chapter_title:
             return jsonify({"error": "chapter_title required"}), 400
+
+        if not chapter_id:
+            return jsonify({"error": "chapter_id required"}), 400
 
         difficulty_map = {
             "1": "recall",
@@ -764,9 +960,34 @@ def register_routes(app):
             temp=0.3
         )
 
+        questions = result.get("questions") or []
+        if not isinstance(questions, list):
+            questions = []
+
+        quiz_title = f"{chapter_title}: {question_type.capitalize()} Quiz"
+        quiz = create_quiz(user_id, quiz_title, textbook_id, chapter_id)
+
+        created_questions = []
+        for question in questions:
+            created_questions.append(
+                add_quiz_question(
+                    quiz["id"],
+                    question["question"],
+                    question_type,
+                    question["choices"],
+                    question["correct_answer"],
+                    question["explanation"],
+                    question["citation"]
+                )
+            )
+
+        if not created_questions:
+            return jsonify({"error": "No quiz questions were generated."}), 500
+
         return jsonify({
             "status": "success",
             "difficulty": difficulty,
             "question_type": question_type,
-            "questions": result["questions"]
-        }), 200
+            "quiz_id": quiz["id"],
+            "questions": result.get("questions") or []
+        }), 201
