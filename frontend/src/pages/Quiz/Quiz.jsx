@@ -20,6 +20,7 @@ import "./Quiz.css";
 
 const API_BASE = "http://127.0.0.1:5001";
 const ANSWER_LABELS = ["A", "B", "C", "D"];
+const CONFIDENCE_OPTIONS = ["low", "medium", "high"];
 const QUIZ_MODES = [
   {
     value: "easy",
@@ -118,6 +119,7 @@ export default function Quiz() {
   const [questions, setQuestions] = useState([]);
   const [index, setIndex] = useState(0);
   const [selectedByIndex, setSelectedByIndex] = useState({});
+  const [confidenceByIndex, setConfidenceByIndex] = useState({});
   const [loading, setLoading] = useState(false);
   const [submitting, setSubmitting] = useState(false);
   const [savingDraft, setSavingDraft] = useState(false);
@@ -139,14 +141,21 @@ export default function Quiz() {
   const current = questions[index];
   const progressValue = total > 0 ? ((index + 1) / total) * 100 : 0;
   const selectedChoice = selectedByIndex[index];
+  const selectedConfidence = confidenceByIndex[index] || null;
   const answeredCount = Object.keys(selectedByIndex).length;
+  const confidenceCount = Object.keys(confidenceByIndex).length;
   const allAnswered = total > 0 && answeredCount === total;
+  const allConfidencesSelected = total > 0 && confidenceCount === total;
 
   const goPrev = () => setIndex((currentIndex) => Math.max(0, currentIndex - 1));
   const goNext = () => setIndex((currentIndex) => Math.min(total - 1, currentIndex + 1));
 
   const selectChoice = (choiceIndex) => {
     setSelectedByIndex((previous) => ({ ...previous, [index]: choiceIndex }));
+  };
+
+  const selectConfidence = (confidence) => {
+    setConfidenceByIndex((previous) => ({ ...previous, [index]: confidence }));
   };
 
   const goBackToDashboard = () => {
@@ -163,6 +172,10 @@ export default function Quiz() {
       const selectedIndex = selectedByIndex[questionIndex];
       return selectedIndex != null ? ANSWER_LABELS[selectedIndex] : null;
     });
+  };
+
+  const buildConfidencePayload = () => {
+    return questions.map((_, questionIndex) => confidenceByIndex[questionIndex] || null);
   };
 
   const restoreDraftState = (attempt) => {
@@ -289,12 +302,15 @@ export default function Quiz() {
       setQuestions(normalized);
       setIndex(0);
       setSelectedByIndex({});
+      setConfidenceByIndex({});
+      setQuizId(payload.quiz_id || null);
+      sessionStartedAtRef.current = Date.now();
     } catch (fetchError) {
       setError(String(fetchError));
     } finally {
       setLoading(false);
     }
-  }, [chapter_title, quizDifficulty, textbook_id]);
+  }, [chapter_id, chapter_title, quizDifficulty, textbook_id]);
 
   const fetchPretest = useCallback(async () => {
     if (!textbook_id || !chapter_id) {
@@ -345,6 +361,7 @@ export default function Quiz() {
       setQuestions(normalized);
       setIndex(0);
       setSelectedByIndex({});
+      setConfidenceByIndex({});
       setQuizId(payload.pretest_id || null);
       sessionStartedAtRef.current = Date.now();
       restoreDraftState(payload.attempt);
@@ -369,7 +386,7 @@ export default function Quiz() {
   }, [fetchPretest, fetchQuiz, isPretest, quizStarted]);
 
   const handleSubmit = async () => {
-    if (!allAnswered) return;
+    if (!allAnswered || !allConfidencesSelected) return;
 
     if (isPretest) {
       setSubmitting(true);
@@ -380,6 +397,7 @@ export default function Quiz() {
           const selectedIndex = selectedByIndex[questionIndex];
           return selectedIndex != null ? ANSWER_LABELS[selectedIndex] : null;
         });
+        const confidences = buildConfidencePayload();
 
         const response = await authFetch(
           `${API_BASE}/api/textbooks/${textbook_id}/chapters/${chapter_id}/pretest/submit`,
@@ -388,7 +406,7 @@ export default function Quiz() {
             headers: {
               "Content-Type": "application/json",
             },
-            body: JSON.stringify({ answers }),
+            body: JSON.stringify({ answers, confidences }),
           }
         );
 
@@ -453,17 +471,21 @@ export default function Quiz() {
         citation: question.citation,
         explanation: question.explanation,
         type: question.type,
+        confidence: confidenceByIndex[questionIndex] || null,
       };
     });
 
-    const letters = ["A", "B", "C", "D"];
+    const score = responses.reduce(
+      (currentScore, response) => currentScore + (response.isCorrect ? 1 : 0),
+      0
+    );
+
     const answers = {};
     responses.forEach((r, qIndex) => {
-      if (r.selectedIndex != null && r.selectedIndex >= 0 && r.selectedIndex < letters.length) {
-        answers[String(qIndex)] = letters[r.selectedIndex];
-      } else {
-        answers[String(qIndex)] = "";
-      }
+      answers[String(qIndex)] = {
+        answer: r.selectedAnswer || "",
+        confidence: r.confidence,
+      };
     });
 
     const started = sessionStartedAtRef.current;
@@ -497,11 +519,6 @@ export default function Quiz() {
         console.error("Quiz attempt save failed:", e);
       }
     }
-    
-    const score = responses.reduce(
-      (currentScore, response) => currentScore + (response.isCorrect ? 1 : 0),
-      0
-    );
 
   navigate("/quiz/results", {
     state: buildResultState({
@@ -668,13 +685,33 @@ export default function Quiz() {
               })}
             </SimpleGrid>
 
+            <div className="quiz-confidence-section">
+              <Text className="quiz-confidence-label">Rate confidence</Text>
+              <Group gap="sm" wrap="nowrap" className="quiz-confidence-options">
+                {CONFIDENCE_OPTIONS.map((confidence) => {
+                  const isSelected = selectedConfidence === confidence;
+
+                  return (
+                    <button
+                      key={confidence}
+                      type="button"
+                      className={`quiz-confidence-btn ${isSelected ? "selected" : ""}`}
+                      onClick={() => selectConfidence(confidence)}
+                    >
+                      {formatQuestionType(confidence)}
+                    </button>
+                  );
+                })}
+              </Group>
+            </div>
+
             <Group justify="space-between" className="quiz-nav">
               <Button variant="default" onClick={goPrev} disabled={index === 0}>
                 Prev
               </Button>
 
               <Text className="quiz-counter">
-                {index + 1} / {total} (answered {answeredCount}/{total})
+                {index + 1} / {total} (answered {answeredCount}/{total}, confidence {confidenceCount}/{total})
               </Text>
 
               <Button onClick={goNext} disabled={index === total - 1}>
@@ -683,14 +720,21 @@ export default function Quiz() {
             </Group>
 
             <Group justify="flex-end" className="quiz-submit-row">
-              <Button onClick={handleSubmit} disabled={!allAnswered || submitting}>
+              <Button
+                onClick={handleSubmit}
+                disabled={!allAnswered || !allConfidencesSelected || submitting}
+              >
                 {isPretest ? (submitting ? "Saving Baseline..." : "Submit Pretest") : "Submit Quiz"}
               </Button>
             </Group>
 
-            {!allAnswered ? (
+            {!allAnswered || !allConfidencesSelected ? (
               <Text className="quiz-hint" ta="right">
-                Answer all questions to submit.
+                {!allAnswered && !allConfidencesSelected
+                  ? "Answer every question and rate confidence on each one to submit."
+                  : !allAnswered
+                    ? "Answer all questions to submit."
+                    : "Rate confidence for every question to submit."}
               </Text>
             ) : null}
           </>

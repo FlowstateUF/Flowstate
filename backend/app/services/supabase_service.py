@@ -574,6 +574,66 @@ def _parse_ts(ts) -> datetime | None:
     except ValueError:
         return None
 
+
+def confidence_label_to_percent(label) -> float | None:
+    normalized = str(label or "").strip().lower()
+    lookup = {
+        "low": 0.25,
+        "medium": 0.70,
+        "high": 1.00,
+    }
+    return lookup.get(normalized)
+
+
+def classify_confidence_gap(confidence_ratio: float, actual_ratio: float) -> str:
+    confidence = max(0.0, min(1.0, float(confidence_ratio or 0)))
+    actual = max(0.0, min(1.0, float(actual_ratio or 0)))
+    gap_points = round((confidence - actual) * 100)
+
+    if abs(gap_points) <= 20:
+        return "accurate"
+    if gap_points > 0:
+        return "overconfidence"
+    return "underconfidence"
+
+
+def build_confidence_gap_point(
+    *,
+    kind: str,
+    title: str,
+    attempt_id: str | None,
+    quiz_id: str | None,
+    chapter_id: str | None,
+    chapter_title: str | None,
+    completed_at,
+    question_points: list[tuple[float, float]],
+) -> dict | None:
+    if not question_points:
+        return None
+
+    confidence_percent = sum(confidence for confidence, _ in question_points) / len(question_points)
+    actual_percent = sum(actual for _, actual in question_points) / len(question_points)
+    actual = max(0.0, min(1.0, float(actual_percent or 0)))
+    confidence = max(0.0, min(1.0, float(confidence_percent)))
+    gap = round((confidence - actual) * 100)
+
+    return {
+        "kind": kind,
+        "title": title,
+        "attempt_id": attempt_id,
+        "quiz_id": quiz_id,
+        "chapter_id": chapter_id,
+        "chapter_title": chapter_title,
+        "completed_at": completed_at,
+        "confidence_percent": round(confidence * 100),
+        "actual_percent": round(actual * 100),
+        "confidence_ratio": round(confidence, 4),
+        "actual_ratio": round(actual, 4),
+        "category": classify_confidence_gap(confidence, actual),
+        "gap_points": gap,
+        "mismatch_ratio": round(abs(confidence - actual), 4),
+    }
+
 def get_textbook_dashboard_snapshot(
     user_id: str, textbook_id: str, recent_limit: int = 8
 ) -> dict | None:
@@ -615,6 +675,21 @@ def get_textbook_dashboard_snapshot(
     quiz_ids = [r["id"] for r in quiz_rows]
     quiz_chapter = {str(r["id"]): str(r.get("chapter_id") or "") for r in quiz_rows}
     quiz_titles = {str(r["id"]): (r.get("title") or "Quiz") for r in quiz_rows}
+    quiz_answer_keys: dict[str, list[str]] = defaultdict(list)
+
+    if quiz_ids:
+        quiz_question_rows = (
+            supabase.table("quiz_questions")
+            .select("quiz_id, answer, created_at")
+            .in_("quiz_id", quiz_ids)
+            .order("created_at")
+            .execute()
+        ).data or []
+
+        for row in quiz_question_rows:
+            quiz_answer_keys[str(row.get("quiz_id") or "")].append(
+                str(row.get("answer") or "").strip().upper()
+            )
 
     quiz_attempts: list[dict] = []
     if quiz_ids:
@@ -645,6 +720,15 @@ def get_textbook_dashboard_snapshot(
             .in_("summary_id", summary_ids)
             .execute()
         ).data or []
+
+    pretest_attempts = (
+        supabase.table("pretest_attempts")
+        .select("*")
+        .eq("user_id", user_id)
+        .eq("textbook_id", textbook_id)
+        .eq("status", "completed")
+        .execute()
+    ).data or []
 
     # --- Activity: last 7 days, session counts per type
     today = datetime.now(timezone.utc).date()
@@ -721,6 +805,64 @@ def get_textbook_dashboard_snapshot(
     overall = 0
     if best_by_quiz:
         overall = round(sum(best_by_quiz.values()) / len(best_by_quiz))
+
+    confidence_gap_points: list[dict] = []
+    for row in quiz_attempts:
+        answers = row.get("answers") or {}
+        if not isinstance(answers, dict):
+            continue
+
+        question_points = []
+        answer_key_list = quiz_answer_keys.get(str(row.get("quiz_id") or ""), [])
+        ordered_answers = sorted(
+            answers.items(),
+            key=lambda item: int(item[0]) if str(item[0]).isdigit() else 9999,
+        )
+        for index, (_, value) in enumerate(ordered_answers):
+            if not isinstance(value, dict):
+                continue
+            confidence_value = confidence_label_to_percent(value.get("confidence"))
+            selected_answer = str(value.get("answer") or "").strip().upper()
+            correct_answer = answer_key_list[index] if index < len(answer_key_list) else ""
+            actual_value = 1.0 if selected_answer and selected_answer == correct_answer else 0.0
+            if confidence_value is not None:
+                question_points.append((confidence_value, actual_value))
+
+        point = build_confidence_gap_point(
+            kind="quiz",
+            title=quiz_titles.get(str(row.get("quiz_id") or ""), "Quiz"),
+            attempt_id=str(row.get("id") or ""),
+            quiz_id=str(row.get("quiz_id") or ""),
+            chapter_id=quiz_chapter.get(str(row.get("quiz_id") or ""), ""),
+            chapter_title=chapter_titles.get(quiz_chapter.get(str(row.get("quiz_id") or ""), ""), "Chapter"),
+            completed_at=row.get("completed_at"),
+            question_points=question_points,
+        )
+        if point:
+            confidence_gap_points.append(point)
+
+    confidence_gap_points.sort(
+        key=lambda point: _parse_ts(point.get("completed_at")) or datetime.min.replace(tzinfo=timezone.utc),
+        reverse=True,
+    )
+
+    confidence_gap_summary = {
+        "accurate": sum(
+            1
+            for point in confidence_gap_points
+            if point["category"] == "accurate"
+        ),
+        "overconfidence": sum(
+            1
+            for point in confidence_gap_points
+            if point["category"] == "overconfidence"
+        ),
+        "underconfidence": sum(
+            1
+            for point in confidence_gap_points
+            if point["category"] == "underconfidence"
+        ),
+    }
 
     # --- Recent sessions (unified, max 8)
     unified: list[dict] = []
@@ -903,6 +1045,10 @@ def get_textbook_dashboard_snapshot(
         "heatmap": {
             "granularity": "day",
             "days": heatmap_days,
+        },
+        "confidence_gap": {
+            "points": confidence_gap_points,
+            "summary": confidence_gap_summary,
         },
         "recent_sessions": recent,
     }

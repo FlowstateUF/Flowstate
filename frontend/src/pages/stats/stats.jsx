@@ -13,6 +13,7 @@ import {
   Box,
   Loader,
   SegmentedControl,
+  Select,
   Tooltip,
 } from "@mantine/core";
 import {
@@ -71,6 +72,24 @@ function kindBadgeColor(kind) {
   return "gray";
 }
 
+const confidenceGapMeta = {
+  accurate: {
+    label: "Accurate confidence",
+    tone: "Your performance was close to what you thought it would be.",
+    dotColor: "#868e96",
+  },
+  overconfidence: {
+    label: "Overconfidence",
+    tone: "You performed worse than you thought.",
+    dotColor: "#f76707",
+  },
+  underconfidence: {
+    label: "Underconfidence",
+    tone: "You performed better than you thought.",
+    dotColor: "#228be6",
+  },
+};
+
 function StatCard({ title, value, icon, dark }) {
   return (
     <Paper
@@ -105,6 +124,11 @@ function StatCard({ title, value, icon, dark }) {
 function ActivityChart({ activity, loading }) {
   const months = activity?.day_labels || [];
   const series = activity?.series || [];
+  const seriesStyles = {
+    quiz: "quiz",
+    flashcards: "flashcards",
+    summaries: "summaries",
+  };
 
   const W = 760;
   const H = 220;
@@ -147,9 +171,9 @@ function ActivityChart({ activity, loading }) {
       </Text>
 
       <Group gap="xl" className="stats-legend" mb="sm">
-        {series.map((s, idx) => (
+        {series.map((s) => (
           <Group key={s.key || s.label} gap={8}>
-            <span className={`stats-dot stats-dot-${idx % 4}`} />
+            <span className={`stats-dot stats-dot-${seriesStyles[s.key] || "quiz"}`} />
             <Text size="xs" c="dimmed">
               {s.label}
             </Text>
@@ -178,15 +202,17 @@ function ActivityChart({ activity, loading }) {
                   const x = gx + bi * (barWidth + barGap);
                   const y = H - 30 - barH;
                   return (
-                    <rect
-                      key={`${s.key}-${bi}`}
-                      x={x}
-                      y={y}
-                      width={barWidth}
-                      height={Math.max(0, barH)}
-                      rx="4"
-                      className={`stats-bar stats-bar-${bi % 4}`}
-                    />
+                    <g key={`${s.key}-${bi}`}>
+                      <title>{`${s.label}: ${v} session(s) on ${m}`}</title>
+                      <rect
+                        x={x}
+                        y={y}
+                        width={barWidth}
+                        height={Math.max(0, barH)}
+                        rx="4"
+                        className={`stats-bar stats-bar-${seriesStyles[s.key] || "quiz"}`}
+                      />
+                    </g>
                   );
                 })}
               </g>
@@ -385,7 +411,25 @@ function ChapterMasteryDonut({ chapters, chapterOrder }) {
   const cx = 90;
   const cy = 90;
   const circ = 2 * Math.PI * r;
-  let offset = 0;
+  const donutSegments = useMemo(() => {
+    return parts.reduce(
+      (acc, part) => {
+        const dash = part.frac * circ;
+        acc.segments.push({
+          label: part.label,
+          raw: part.raw,
+          dash,
+          gap: circ - dash,
+          offset: acc.offset,
+        });
+        return {
+          offset: acc.offset + dash,
+          segments: acc.segments,
+        };
+      },
+      { offset: 0, segments: [] }
+    ).segments;
+  }, [circ, parts]);
 
   if (!parts.length) {
     return (
@@ -409,7 +453,7 @@ function ChapterMasteryDonut({ chapters, chapterOrder }) {
         Share of total mastery (up to 5 chapters with attempts)
       </Text>
       <Group justify="center" gap="md" mb="sm" className="stats-donut-legend" wrap="wrap">
-        {parts.map((p, idx) => (
+        {donutSegments.map((p, idx) => (
           <Group key={p.label} gap={8}>
             <span className={`stats-dot stats-dot-${idx % 4}`} />
             <Text size="xs" c="dimmed">
@@ -428,10 +472,7 @@ function ChapterMasteryDonut({ chapters, chapterOrder }) {
             stroke="#e9ecef"
             strokeWidth="18"
           />
-          {parts.map((p, idx) => {
-            const dash = p.frac * circ;
-            const gap = circ - dash;
-            const el = (
+          {donutSegments.map((p, idx) => (
               <circle
                 key={p.label}
                 cx={cx}
@@ -440,18 +481,317 @@ function ChapterMasteryDonut({ chapters, chapterOrder }) {
                 fill="none"
                 strokeWidth="18"
                 strokeLinecap="butt"
-                strokeDasharray={`${dash} ${gap}`}
-                strokeDashoffset={-offset}
+                strokeDasharray={`${p.dash} ${p.gap}`}
+                strokeDashoffset={-p.offset}
                 className={`stats-donut stats-donut-${idx % 4}`}
               />
-            );
-            offset += dash;
-            return el;
-          })}
+          ))}
           <circle cx={cx} cy={cy} r="45" fill="white" />
         </svg>
       </Group>
     </Box>
+  );
+}
+
+function ConfidenceGapCard({ data, chapters }) {
+  const [selectedChapterId, setSelectedChapterId] = useState("all");
+  const plotInset = {
+    left: 72,
+    right: 34,
+    bottom: 48,
+    top: 30,
+  };
+
+  const chapterOptions = useMemo(() => {
+    const base = [{ value: "all", label: "All chapters" }];
+    const pointChapterIds = new Set(
+      (data?.points || [])
+        .filter((point) => point.kind === "quiz" && point.chapter_id)
+        .map((point) => point.chapter_id)
+    );
+
+    (chapters || []).forEach((chapter) => {
+      if (pointChapterIds.has(chapter.id)) {
+        base.push({
+          value: chapter.id,
+          label: chapter.title || "Chapter",
+        });
+      }
+    });
+
+    return base;
+  }, [chapters, data]);
+
+  const resolvedChapterId = chapterOptions.some(
+    (option) => option.value === selectedChapterId
+  )
+    ? selectedChapterId
+    : "all";
+
+  const filteredPoints = useMemo(() => {
+    return (data?.points || []).filter((point) => {
+      if (point.kind !== "quiz") return false;
+      if (resolvedChapterId === "all") return true;
+      return point.chapter_id === resolvedChapterId;
+    });
+  }, [data, resolvedChapterId]);
+
+  const clusteredPoints = useMemo(() => {
+    const buckets = new Map();
+
+    filteredPoints.forEach((point, index) => {
+      const xBucket = Math.round((point.confidence_ratio || 0) * 20);
+      const yBucket = Math.round((point.actual_ratio || 0) * 20);
+      const key = `${xBucket}-${yBucket}`;
+      const existing = buckets.get(key);
+
+      if (existing) {
+        existing.points.push(point);
+      } else {
+        buckets.set(key, {
+          id: point.attempt_id || `${key}-${index}`,
+          points: [point],
+        });
+      }
+    });
+
+    return [...buckets.values()].map((cluster) => {
+      const count = cluster.points.length;
+      const avgConfidenceRatio =
+        cluster.points.reduce((sum, point) => sum + (point.confidence_ratio || 0), 0) / count;
+      const avgActualRatio =
+        cluster.points.reduce((sum, point) => sum + (point.actual_ratio || 0), 0) / count;
+      const avgConfidencePercent =
+        cluster.points.reduce((sum, point) => sum + (point.confidence_percent || 0), 0) / count;
+      const avgActualPercent =
+        cluster.points.reduce((sum, point) => sum + (point.actual_percent || 0), 0) / count;
+      const avgGapPoints =
+        cluster.points.reduce((sum, point) => sum + (point.gap_points || 0), 0) / count;
+      const mismatch = Math.min(1, Math.abs(avgConfidenceRatio - avgActualRatio));
+      let category = "accurate";
+      if (avgGapPoints > 20) category = "overconfidence";
+      else if (avgGapPoints < -20) category = "underconfidence";
+
+      return {
+        id: cluster.id,
+        count,
+        points: cluster.points,
+        confidenceRatio: avgConfidenceRatio,
+        actualRatio: avgActualRatio,
+        confidencePercent: Math.round(avgConfidencePercent),
+        actualPercent: Math.round(avgActualPercent),
+        gapPoints: Math.round(avgGapPoints),
+        mismatchRatio: mismatch,
+        category,
+      };
+    });
+  }, [filteredPoints]);
+
+  const categoryCounts = useMemo(() => {
+    return Object.keys(confidenceGapMeta).reduce((acc, key) => {
+      acc[key] = filteredPoints.reduce(
+        (count, point) => count + (point.category === key ? 1 : 0),
+        0
+      );
+      return acc;
+    }, {});
+  }, [filteredPoints]);
+
+  const projectPointPosition = (confidenceRatio, actualRatio) => {
+    const clampedX = Math.min(1, Math.max(0, confidenceRatio || 0));
+    const clampedY = Math.min(1, Math.max(0, actualRatio || 0));
+
+    return {
+      left: `calc(${plotInset.left}px + (100% - ${plotInset.left + plotInset.right}px) * ${clampedX})`,
+      bottom: `calc(${plotInset.bottom}px + (100% - ${plotInset.top + plotInset.bottom}px) * ${clampedY})`,
+    };
+  };
+
+  const tickValues = [0, 25, 50, 75, 100];
+
+  return (
+    <Paper withBorder radius="md" p="lg" className="stats-card">
+      <Group justify="space-between" align="flex-start" mb="sm" wrap="wrap">
+        <div>
+          <Text fw={800}>Confidence Gap</Text>
+          <Text c="dimmed" size="xs" mt={4}>
+            Perceived performance vs actual performance.
+          </Text>
+        </div>
+        <Select
+          size="xs"
+          value={resolvedChapterId}
+          onChange={(value) => setSelectedChapterId(value || "all")}
+          data={chapterOptions}
+          className="confidence-gap-select"
+          aria-label="Select chapter for confidence gap"
+        />
+      </Group>
+
+      <div className="confidence-gap-layout">
+        <div className="confidence-gap-plotWrap">
+          <div className="confidence-gap-chart">
+            <div className="confidence-gap-axis confidence-gap-axis-x" />
+            <div className="confidence-gap-axis confidence-gap-axis-y" />
+            <svg
+              className="confidence-gap-diagonalSvg"
+              viewBox="0 0 1000 1000"
+              preserveAspectRatio="none"
+              aria-hidden="true"
+            >
+              <line
+                x1="0"
+                y1="1000"
+                x2="1000"
+                y2="0"
+                className="confidence-gap-diagonalLine"
+              />
+            </svg>
+            <div className="confidence-gap-region confidence-gap-region-top">Underconfidence</div>
+            <div className="confidence-gap-region confidence-gap-region-bottom">Overconfidence</div>
+
+            {tickValues.map((tick) => (
+              <Text
+                key={`x-${tick}`}
+                size="12px"
+                className="confidence-gap-tick confidence-gap-tick-x"
+                style={{
+                  left: `calc(${plotInset.left}px + (100% - ${plotInset.left + plotInset.right}px) * ${tick / 100})`,
+                }}
+              >
+                {tick}%
+              </Text>
+            ))}
+
+            {tickValues.map((tick) => (
+              <Text
+                key={`y-${tick}`}
+                size="12px"
+                className="confidence-gap-tick confidence-gap-tick-y"
+                style={{
+                  bottom: `calc(${plotInset.bottom}px + (100% - ${plotInset.top + plotInset.bottom}px) * ${tick / 100})`,
+                }}
+              >
+                {tick}%
+              </Text>
+            ))}
+
+            {clusteredPoints.length === 0 ? (
+              <div className="confidence-gap-empty">
+                <Text fw={700}>No confidence data yet</Text>
+              </div>
+            ) : (
+              clusteredPoints.map((cluster) => {
+                const gapMagnitude = Math.abs(cluster.gapPoints);
+                const mismatchStrength =
+                  cluster.category === "accurate"
+                    ? Math.min(1, gapMagnitude / 20)
+                    : Math.min(1, (gapMagnitude - 20) / 60);
+                const bubbleColor =
+                  cluster.category === "accurate"
+                    ? `rgba(134, 142, 150, ${(0.28 + mismatchStrength * 0.18).toFixed(3)})`
+                    : cluster.category === "overconfidence"
+                      ? `rgba(230, 73, 45, ${(0.36 + mismatchStrength * 0.5).toFixed(3)})`
+                      : `rgba(34, 139, 230, ${(0.34 + mismatchStrength * 0.5).toFixed(3)})`;
+                const bubbleBorder =
+                  cluster.category === "accurate"
+                    ? `rgba(134, 142, 150, ${(0.58 + mismatchStrength * 0.18).toFixed(3)})`
+                    : cluster.category === "overconfidence"
+                      ? `rgba(230, 73, 45, ${(0.62 + mismatchStrength * 0.26).toFixed(3)})`
+                      : `rgba(34, 139, 230, ${(0.62 + mismatchStrength * 0.26).toFixed(3)})`;
+                const bubbleStyle = {
+                  ...projectPointPosition(cluster.confidenceRatio, cluster.actualRatio),
+                  backgroundColor: bubbleColor,
+                  borderColor: bubbleBorder,
+                };
+
+                return (
+                  <Tooltip
+                    key={cluster.id}
+                    withArrow
+                    multiline
+                    label={
+                      <Stack gap={4}>
+                        <Text size="xs" fw={700}>
+                          {cluster.count > 1
+                            ? `${cluster.count} overlapping quiz attempts`
+                            : cluster.points[0]?.title}
+                        </Text>
+                        {cluster.count > 1 ? null : (
+                          cluster.points[0]?.chapter_title &&
+                          !String(cluster.points[0]?.title || "")
+                            .toLowerCase()
+                            .includes(String(cluster.points[0]?.chapter_title || "").toLowerCase()) ? (
+                            <Text size="xs">
+                              {cluster.points[0]?.chapter_title}
+                            </Text>
+                          ) : null
+                        )}
+                        <Text size="xs">Perceived performance: {cluster.confidencePercent}%</Text>
+                        <Text size="xs">Actual performance: {cluster.actualPercent}%</Text>
+                        <Text size="xs">
+                          Confidence gap: {cluster.gapPoints > 0 ? "+" : ""}
+                          {cluster.gapPoints}
+                        </Text>
+                        <Text size="xs">
+                          Read: {confidenceGapMeta[cluster.category]?.label || "Accurate confidence"}
+                        </Text>
+                      </Stack>
+                    }
+                  >
+                    <div
+                      className="confidence-gap-point"
+                      style={bubbleStyle}
+                    >
+                      {cluster.count > 1 ? cluster.count : ""}
+                    </div>
+                  </Tooltip>
+                );
+              })
+            )}
+
+            <Text size="11px" c="dimmed" className="confidence-gap-axisLabel confidence-gap-axisLabel-x">
+              Perceived Performance
+            </Text>
+            <Text size="11px" c="dimmed" className="confidence-gap-axisLabel confidence-gap-axisLabel-y">
+              Actual Performance
+            </Text>
+          </div>
+        </div>
+
+        <div className="confidence-gap-sidebar">
+          <Group gap={10} className="confidence-gap-inlineLegend">
+            <span className="confidence-gap-lineLegend" />
+            <Text size="xs" c="dimmed">
+              Dashed gray line = accurate confidence
+            </Text>
+          </Group>
+
+          <Stack gap="sm" mt="sm" className="confidence-gap-summaryStack">
+            {Object.entries(confidenceGapMeta).map(([key, meta]) => (
+              <Paper key={key} radius="md" p="sm" className="confidence-gap-summary">
+                <Group gap={8} mb={6} wrap="nowrap">
+                  <span
+                    className="confidence-gap-summaryDot"
+                    style={{ backgroundColor: meta.dotColor }}
+                  />
+                  <Text fw={700} size="sm">
+                    {meta.label}
+                  </Text>
+                </Group>
+                <Text size="xl" fw={800} mt={4}>
+                  {categoryCounts[key] || 0}
+                </Text>
+                <Text size="xs" c="dimmed" mt={4}>
+                  {meta.tone}
+                </Text>
+              </Paper>
+            ))}
+          </Stack>
+        </div>
+      </div>
+
+    </Paper>
   );
 }
 
@@ -614,7 +954,7 @@ export default function Stats() {
           <Stack gap="xl">
             <Group justify="space-between" align="flex-start" wrap="wrap">
               <Box>
-                <Title order={2}>Learning stats</Title>
+                <Title order={2}>Learning Dashboard</Title>
                 <Text c="dimmed" size="sm" mt={4}>
                   {textbookLabel || "Your textbook"}
                 </Text>
@@ -622,9 +962,12 @@ export default function Stats() {
             </Group>
 
             {loading ? (
-              <Group justify="center" py="xl">
-                <Loader />
-              </Group>
+              <div className="stats-loadingCard">
+                <div className="stats-loadingInner">
+                  <Loader size={56} />
+                  <Text className="stats-loadingTitle">Loading Learning Dashboard</Text>
+                </div>
+              </div>
             ) : !data ? (
               <Text c="red">Could not load stats for this textbook.</Text>
             ) : (
@@ -764,6 +1107,8 @@ export default function Stats() {
                     </Stack>
                   </Paper>
                 </SimpleGrid>
+
+                <ConfidenceGapCard data={data.confidence_gap} chapters={chapters} />
 
                 <Paper withBorder radius="md" p="lg" className="stats-card">
                   <Group justify="space-between" align="center" mb="sm">
