@@ -265,6 +265,7 @@ export default function Quiz() {
         body: JSON.stringify({
           textbook_id,
           chapter_title,
+          chapter_id,
           difficulty: quizDifficulty,
           num_questions: 5,
         }),
@@ -344,7 +345,7 @@ export default function Quiz() {
       setQuestions(normalized);
       setIndex(0);
       setSelectedByIndex({});
-      setQuizId(data.quiz_id || null);
+      setQuizId(payload.pretest_id || null);
       sessionStartedAtRef.current = Date.now();
       restoreDraftState(payload.attempt);
     } catch (fetchError) {
@@ -502,18 +503,19 @@ export default function Quiz() {
       0
     );
 
-navigate("/quiz/results", {
-  state: buildResultState({
-    assessmentType: "quiz",
-    textbook_id,
-    chapter_id,
-    chapter_title,
-    difficulty: quizDifficulty,
-    score,
-    total,
-    responses,
-  }),
-});
+  navigate("/quiz/results", {
+    state: buildResultState({
+      assessmentType: "quiz",
+      textbook_id,
+      chapter_id,
+      chapter_title,
+      difficulty: quizDifficulty,
+      score,
+      total,
+      responses,
+    }),
+  });
+};
 
   return (
     <main className="quiz-page">
@@ -706,5 +708,4 @@ navigate("/quiz/results", {
       </Container>
     </main>
   );
-  }
 }
