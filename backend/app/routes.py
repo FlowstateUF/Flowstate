@@ -362,7 +362,15 @@ def _serialize_pretest_attempt(attempt: dict | None) -> dict | None:
     }
 
 
-def _score_pretest_attempt(questions: list[dict], answers: list) -> tuple[int, list[dict]]:
+def normalizeConfidenceLabel(raw_confidence) -> str | None:
+    if not isinstance(raw_confidence, str):
+        return None
+
+    normalized = raw_confidence.strip().lower()
+    return normalized if normalized in {"low", "medium", "high"} else None
+
+
+def _score_pretest_attempt(questions: list[dict], answers: list, confidences: list | None = None) -> tuple[int, list[dict]]:
     answer_labels = ["A", "B", "C", "D"]
     responses = []
     score = 0
@@ -370,7 +378,9 @@ def _score_pretest_attempt(questions: list[dict], answers: list) -> tuple[int, l
     for idx, question in enumerate(questions):
         choices = question.get("choices") or {}
         raw_answer = answers[idx] if idx < len(answers) else None
+        raw_confidence = confidences[idx] if isinstance(confidences, list) and idx < len(confidences) else None
         selected_answer = raw_answer.strip().upper() if isinstance(raw_answer, str) else None
+        confidence = normalizeConfidenceLabel(raw_confidence)
 
         if selected_answer not in answer_labels:
             selected_answer = None
@@ -390,6 +400,7 @@ def _score_pretest_attempt(questions: list[dict], answers: list) -> tuple[int, l
             "correctText": choices.get(correct_answer) if correct_answer else None,
             "isCorrect": is_correct,
             "type": question.get("type"),
+            "confidence": confidence,
             "citation": question.get("citation"),
             "explanation": question.get("explanation"),
         })
@@ -928,6 +939,7 @@ def register_routes(app):
 
         data = request.get_json(silent=True) or {}
         answers = data.get("answers")
+        confidences = data.get("confidences")
         questions = pretest.get("questions") or []
 
         if not isinstance(answers, list):
@@ -936,7 +948,13 @@ def register_routes(app):
         if len(answers) != len(questions):
             return jsonify({"error": "answers must include one response per question"}), 400
 
-        score, responses = _score_pretest_attempt(questions, answers)
+        if confidences is not None:
+            if not isinstance(confidences, list):
+                return jsonify({"error": "confidences must be an array when provided"}), 400
+            if len(confidences) != len(questions):
+                return jsonify({"error": "confidences must include one response per question"}), 400
+
+        score, responses = _score_pretest_attempt(questions, answers, confidences)
         attempt = complete_pretest_attempt(
             user_id=str(user_id),
             textbook_id=str(textbook_id),

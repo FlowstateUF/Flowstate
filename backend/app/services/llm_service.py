@@ -311,7 +311,10 @@ class LLMService:
                 question_type=question_type,
                 temp=temp
             )
-            questions.append(q)
+            questions.append({
+                **q,
+                "type": question_type,
+            })
 
         return {
             "questions": questions

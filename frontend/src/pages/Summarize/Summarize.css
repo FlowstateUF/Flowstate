@@ -1,5 +1,6 @@
 .summarize-page {
   padding: 32px 0 48px;
+  min-height: calc(100vh - 84px);
 }
 
 .summarize-header {
@@ -43,4 +44,24 @@
 
 .summarize-return {
   margin-top: 18px;
+}
+
+.summarize-loadingCard {
+  min-height: calc(100vh - 240px);
+  display: grid;
+  place-items: center;
+}
+
+.summarize-loadingInner {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  text-align: center;
+  gap: 12px;
+}
+
+.summarize-loadingTitle {
+  margin-top: 2px;
+  font-size: 1.15rem;
+  font-weight: 700;
 }

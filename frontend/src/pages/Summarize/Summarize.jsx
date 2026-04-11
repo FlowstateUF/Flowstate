@@ -7,6 +7,7 @@ import {
   Stack,
   Text,
   Button,
+  Loader,
 } from "@mantine/core";
 import { useNavigate, useLocation } from "react-router-dom";
 import "./Summarize.css";
@@ -242,35 +243,44 @@ export default function Summarize() {
           <Title order={1}>Summarize</Title>
         </Group>
 
-        <Paper withBorder radius="lg" p="xl" className="summarize-card">
-          <Stack gap="sm">
-            <Text fw={800} className="summarize-chapter-title">
-              {chapter_title || "Chapter"}
-            </Text>
+        {loading ? (
+          <div className="summarize-loadingCard">
+            <div className="summarize-loadingInner">
+              <Loader size={56} />
+              <Text className="summarize-loadingTitle">Loading summary...</Text>
+            </div>
+          </div>
+        ) : (
+          <>
+            <Paper withBorder radius="lg" p="xl" className="summarize-card">
+              <Stack gap="sm">
+                <Text fw={800} className="summarize-chapter-title">
+                  {chapter_title || "Chapter"}
+                </Text>
 
-            {error ? (
-              <Text c="red" style={{ whiteSpace: "pre-wrap" }}>
-                {error}
-              </Text>
-            ) : loading ? (
-              <Text>Generating summary…</Text>
-            ) : (
-              <SummaryView value={summary} />
-            )}
+                {error ? (
+                  <Text c="red" style={{ whiteSpace: "pre-wrap" }}>
+                    {error}
+                  </Text>
+                ) : (
+                  <SummaryView value={summary} />
+                )}
 
-            <Group justify="flex-end">
-              <Button variant="light" onClick={fetchSummary} disabled={loading}>
-                Regenerate
+                <Group justify="flex-end">
+                  <Button variant="light" onClick={fetchSummary} disabled={loading}>
+                    Regenerate
+                  </Button>
+                </Group>
+              </Stack>
+            </Paper>
+
+            <Group justify="flex-end" className="summarize-return">
+              <Button variant="default" onClick={handleReturnToDashboard}>
+                Return to Dashboard
               </Button>
             </Group>
-          </Stack>
-        </Paper>
-
-        <Group justify="flex-end" className="summarize-return">
-          <Button variant="default" onClick={handleReturnToDashboard}>
-            Return to Dashboard
-          </Button>
-        </Group>
+          </>
+        )}
       </Container>
     </main>
   );

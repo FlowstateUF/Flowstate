@@ -147,6 +147,45 @@
   margin-top: 8px;
 }
 
+.quiz-confidence-section {
+  margin-top: 18px;
+  margin-bottom: 6px;
+}
+
+.quiz-confidence-label {
+  margin-bottom: 10px;
+  font-weight: 700;
+  opacity: 0.82;
+}
+
+.quiz-confidence-options {
+  align-items: center;
+}
+
+.quiz-confidence-btn {
+  min-width: 112px;
+  border: 1px solid var(--mantine-color-gray-4);
+  background: white;
+  color: var(--mantine-color-gray-8);
+  border-radius: 999px;
+  padding: 10px 16px;
+  font-weight: 700;
+  cursor: pointer;
+  transition: transform 120ms ease, box-shadow 120ms ease, border-color 120ms ease;
+}
+
+.quiz-confidence-btn:hover {
+  transform: translateY(-1px);
+  box-shadow: 0 6px 18px rgba(0, 0, 0, 0.05);
+  border-color: var(--mantine-color-gray-5);
+}
+
+.quiz-confidence-btn.selected {
+  border-color: var(--mantine-color-blue-6);
+  color: var(--mantine-color-blue-7);
+  box-shadow: 0 0 0 3px rgba(34, 139, 230, 0.14);
+}
+
 .quiz-choice {
   width: 100%;
   text-align: left;

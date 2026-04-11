@@ -7,6 +7,7 @@ import {
   Paper,
   ActionIcon,
   Button,
+  Loader,
 } from "@mantine/core";
 import { IconInfoCircle, IconQuestionMark } from "@tabler/icons-react";
 import { useLocation, useNavigate } from "react-router-dom";
@@ -187,9 +188,12 @@ export default function Flash() {
               <Text c="red">{error}</Text>
             </Paper>
           ) : loading ? (
-            <Paper withBorder radius="lg" p="xl">
-              <Text>Generating flashcards…</Text>
-            </Paper>
+            <div className="flash-loadingCard">
+              <div className="flash-loadingInner">
+                <Loader size={56} />
+                <Text className="flash-loadingTitle">Loading flashcards...</Text>
+              </div>
+            </div>
           ) : !currentCard ? (
             <Paper withBorder radius="lg" p="xl">
               <Text>No flashcards yet.</Text>
@@ -205,18 +209,12 @@ export default function Flash() {
               >
                 <div className={`flipcard ${flipped ? "is-flipped" : ""}`}>
                   <div className="flipcard-face flipcard-front">
-                    <Text fw={800} className="front-title">
-                      Front
-                    </Text>
                     <Text className="front-text">
                       {currentCard.question || currentCard.front || "No question"}
                     </Text>
                   </div>
 
                   <div className="flipcard-face flipcard-back">
-                    <Text fw={800} className="back-title">
-                      Back
-                    </Text>
                     <Text className="back-text">
                       {currentCard.answer || currentCard.back || "No answer"}
                     </Text>
@@ -249,11 +247,13 @@ export default function Flash() {
               </Group>
             </>
           )}
-          <Group justify="flex-end" className="flash-return">
-            <Button variant="default" onClick={handleReturnToDashboard}>
-              Return to Dashboard
-            </Button>
-          </Group>
+          {!loading ? (
+            <Group justify="flex-end" className="flash-return">
+              <Button variant="default" onClick={handleReturnToDashboard}>
+                Return to Dashboard
+              </Button>
+            </Group>
+          ) : null}
         </Container>
       </main>
     </>
