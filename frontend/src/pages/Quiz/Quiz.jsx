@@ -31,13 +31,13 @@ const QUIZ_MODES = [
   {
     value: "medium",
     label: "Medium",
-    apiDifficulty: "3",
+    apiDifficulty: "2",
     description: "Adds more application and checks whether you can use the main ideas.",
   },
   {
     value: "hard",
     label: "Hard",
-    apiDifficulty: "4",
+    apiDifficulty: "3",
     description: "Emphasizes applying and analyzing the chapter's most important concepts.",
   },
 ];

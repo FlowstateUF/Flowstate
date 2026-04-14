@@ -1290,19 +1290,18 @@ def register_routes(app):
             return jsonify({"error": "chapter_id required"}), 400
 
         difficulty_map = {
-            "1": "recall",
-            "2": "understand",
-            "3": "apply",
-            "4": "analyze",
-            "recall": "recall",
-            "understand": "understand",
-            "apply": "apply",
-            "analyze": "analyze",
+            "1": "easy",
+            "2": "medium",
+            "3": "hard",
+            "easy": "easy",
+            "medium": "medium",
+            "hard": "hard",
         }
 
-        question_type = difficulty_map.get(difficulty)
-        if not question_type:
-            return jsonify({"error": "difficulty must be 1-4 or a valid type"}), 400
+        difficulty_clean = str(difficulty).strip().lower()
+        difficulty_level = difficulty_map.get(difficulty_clean)
+        if not difficulty_level:
+            return jsonify({"error": "difficulty must be easy, medium, hard, or 1-3"}), 400
 
         owned = get_textbook(user_id, textbook_id)
         if not owned.data:
@@ -1325,7 +1324,7 @@ def register_routes(app):
 
         result = llm.generate_quiz(
             context=context,
-            question_type=question_type,
+            difficulty=difficulty_level,
             num_questions=num_questions,
             temp=0.3
         )
@@ -1334,7 +1333,7 @@ def register_routes(app):
         if not isinstance(questions, list):
             questions = []
 
-        quiz_title = f"{chapter_title}: {question_type.capitalize()} Quiz"
+        quiz_title = f"{chapter_title}: {difficulty_level.capitalize()} Quiz"
         quiz = create_quiz(user_id, quiz_title, textbook_id, chapter_id)
 
         created_questions = []
@@ -1343,7 +1342,7 @@ def register_routes(app):
                 add_quiz_question(
                     quiz["id"],
                     question["question"],
-                    question_type,
+                    question.get("type", difficulty_level),
                     question["choices"],
                     question["correct_answer"],
                     question["explanation"],
@@ -1359,8 +1358,7 @@ def register_routes(app):
             "textbook_id": textbook_id,
             "chapter_title": chapter_title,
             "matched_chapter": matched_chapter,
-            "difficulty": difficulty,
-            "question_type": question_type,
+            "difficulty": difficulty_level,
             "quiz_id": quiz["id"],
             "questions": result.get("questions") or []
         }), 201
