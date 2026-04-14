@@ -280,7 +280,7 @@ export default function Quiz() {
           chapter_title,
           chapter_id,
           difficulty: quizDifficulty,
-          num_questions: 5,
+          num_questions: 10,
         }),
       });
 
