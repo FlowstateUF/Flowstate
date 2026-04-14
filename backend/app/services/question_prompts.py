@@ -34,16 +34,20 @@ EXPLANATION REQUIREMENTS:
 
 Return ONLY valid JSON in this exact format:
 {{
-  "question": "Your question text",
-  "choices": {{
-    "A": "First option",
-    "B": "Second option",
-    "C": "Third option",
-    "D": "Fourth option"
-  }},
-  "correct_answer": "A",
-  "explanation": "Brief explanation of why this is correct",
-  "citation": "Specific reference to source (e.g., 'Page 1 Paragraph 2' or 'Section 1.3')"
+  "questions": [
+    {{
+      "question": "Your question text",
+      "choices": {{
+        "A": "First option",
+        "B": "Second option",
+        "C": "Third option",
+        "D": "Fourth option"
+      }},
+      "correct_answer": "A",
+      "explanation": "Brief explanation of why this is correct",
+      "citation": "Specific reference to source (e.g., 'Page 1 Paragraph 2' or 'Section 1.3')"
+    }}
+  ]
 }}
 """
 
@@ -55,11 +59,25 @@ RECALL_PROMPT = """QUESTION TYPE: Recall (Bloom's Level 1 - Remember)
 You must generate recall-level questions that test direct memorization of facts 
 explicitly stated in the provided context.
 
+STEP 1:
+Identify {num_questions} DISTINCT concepts, terms, or facts from the provided context.
+- Each concept must be unique and non-overlapping.
+- Do not pick two concepts that are just slight rewordings of the same idea.
+
+STEP 2:
+Generate ONE recall question per concept.
+
 Focus on:
 - Definitions of terms
 - Specific facts directly stated in the context
 - Terminology and key concepts
 - Easily identifiable information
+
+Rules:
+- Each question must test a DIFFERENT concept.
+- Do NOT ask multiple questions about the same idea, even if phrased differently.
+- Avoid reusing the same key terms or definitions across questions.
+- If two questions are similar, discard one and replace it with a new concept.
 
 Question stems:
 - "What is the definition of...?"
@@ -85,6 +103,10 @@ Focus on:
 - Comparing two ideas mentioned in the text
 - Interpreting what a statement implies (only if the implication is explicitly supported)
 - Identifying the best restatement of a concept
+- Each question must test a DIFFERENT concept.
+- Do NOT ask multiple questions about the same idea, even if phrased differently.
+- Avoid reusing the same key terms or definitions across questions.
+- If two questions are similar, discard one and replace it with a new concept.
 
 Allowed stems:
 - "Which option best summarizes...?"
@@ -107,6 +129,10 @@ Scenario requirements:
 - The scenario must be short (2 to 4 sentences).
 - The scenario must map clearly to ONE concept from the context (single-step).
 - The correct answer must be determined directly by applying the rule/definition described.
+- Each question must test a DIFFERENT concept.
+- Do NOT ask multiple questions about the same idea, even if phrased differently.
+- Avoid reusing the same key terms or definitions across questions.
+- If two questions are similar, discard one and replace it with a new concept.
 
 Allowed stems:
 - "In the following situation, which principle from the text should be used?"
@@ -131,6 +157,10 @@ Focus on:
 - Determining cause vs. effect relationships (only if explicitly described)
 - Choosing which evidence best supports a claim stated in the text
 - Diagnosing why an example fits one concept and not another (based on explicit criteria)
+- Each question must test a DIFFERENT concept.
+- Do NOT ask multiple questions about the same idea, even if phrased differently.
+- Avoid reusing the same key terms or definitions across questions.
+- If two questions are similar, discard one and replace it with a new concept.
 
 Allowed stems:
 - "Which option best explains why X occurs, based on the text?"
@@ -152,6 +182,104 @@ QUESTION_TYPES = {
     'apply': APPLY_PROMPT,
     'analyze': ANALYZE_PROMPT
 }
+
+# mixed questions for duplicate handling prompt
+MC_MIXED_PROMPT = """You are an educational assessment expert creating multiple-choice questions.
+
+CRITICAL RULES:
+- Use ONLY information from the provided context below
+- If the context doesn't contain enough information, respond with: {{"error": "Insufficient context"}}
+- Do NOT make up information or use outside knowledge
+- Provide a brief explanation citing the specific source
+- Generate EXACTLY {num_questions} questions
+
+CONCEPT PLANNING:
+First, internally identify {num_questions} DISTINCT concepts from the context.
+- Each concept must be unique and non-overlapping
+- Do NOT use the same concept twice, even if phrased differently
+
+DIFFICULTY: {difficulty}
+
+DIFFICULTY RULES:
+If difficulty is EASY:
+- Most questions should be Recall
+- Some questions should be Understand
+- No scenario-based questions
+
+If difficulty is MEDIUM:
+- Most questions should be Understand
+- Some questions should be Apply
+- Apply questions must be simple and single-step
+
+If difficulty is HARD:
+- Most questions should be Analyze
+- Some questions should be Apply
+- Hard questions should involve comparison, reasoning, or distinguishing between concepts
+
+GLOBAL QUESTION RULES:
+- Each question must test a DIFFERENT concept
+- Do NOT repeat ideas, definitions, or terminology
+- Avoid rewording the same concept into multiple questions
+- If two questions are too similar, replace one with a new concept
+
+QUESTION STRUCTURE RULES:
+- Create EXACTLY 4 answer choices labeled A, B, C, D
+- ONLY ONE answer may be correct
+- All answer choices must:
+  - Be similar in length and grammatical structure
+  - Belong to the same conceptual category
+  - Be plausible based on the context
+  - Not contain absolute cues ("always", "never") unless present in the context
+  - Not include "All of the above" or "None of the above"
+
+TYPE RULES:
+Recall:
+- Test direct facts, definitions, terminology, or explicitly stated concepts
+
+Understand:
+- Test explanation, paraphrasing, interpretation, or comparison directly supported by the text
+- Must require more than quoting a single definition
+
+Apply:
+- Use a short, simple scenario
+- Must map clearly to ONE concept from the context
+- Must be answerable in a single step
+
+Analyze:
+- Require distinguishing between concepts, relationships, or causes/effects explicitly described in the context
+- Must go beyond simple definition or paraphrase
+
+Context:
+{context}
+
+EXPLANATION REQUIREMENTS:
+- Provide a very brief explanation grounded explicitly in the context
+- Explanation must reference the supporting page numbers
+- Do not explain using outside reasoning
+
+IMPORTANT:
+- Do NOT include the concept list in the final output
+- Return ONLY valid JSON
+
+Return ONLY valid JSON in this exact format:
+{{
+  "questions": [
+    {{
+      "type": "recall",
+      "question": "Your question text",
+      "choices": {{
+        "A": "First option",
+        "B": "Second option",
+        "C": "Third option",
+        "D": "Fourth option"
+      }},
+      "correct_answer": "A",
+      "explanation": "Brief explanation of why this is correct",
+      "citation": "Specific reference to source (e.g., 'Page 1 Paragraph 2' or 'Section 1.3')"
+    }}
+  ]
+}}
+"""
 
 # summary
 SUMMARY_PROMPT = """You are an expert academic summarizer.
