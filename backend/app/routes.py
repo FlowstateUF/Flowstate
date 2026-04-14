@@ -255,25 +255,11 @@ def build_recent_chat_history(history: list[dict], limit: int = 6) -> str:
 
     return "\n".join(lines)
 
-# Expands short follow-ups with recent chat so retrieval has more signal.
+# Adds recent chat to retrieval so follow-ups stay grounded.
 def build_retrieval_query(message: str, history: list[dict]) -> str:
     normalized = (message or "").strip()
     if not normalized:
         return ""
-
-    follow_up_patterns = [
-        r"\b(explain|expand|elaborate|go deeper|tell me more)\b",
-        r"\b(each|them|those|that|these|it)\b",
-        r"\bwhat about\b",
-        r"\bwhy\b",
-        r"\bhow so\b",
-    ]
-    is_follow_up = len(normalized.split()) <= 10 or any(
-        re.search(pattern, normalized, re.IGNORECASE) for pattern in follow_up_patterns
-    )
-
-    if not is_follow_up:
-        return normalized
 
     recent_history = build_recent_chat_history(history, limit=4)
     return f"{recent_history}\nCurrent question: {normalized}".strip() if recent_history else normalized

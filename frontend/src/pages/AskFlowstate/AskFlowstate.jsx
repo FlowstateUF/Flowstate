@@ -154,24 +154,24 @@ function renderCitationMarkers(citations, citationIndexMap) {
 }
 
 function renderInlineMarkdown(text, keyPrefix) {
-  const matches = [...(text || "").matchAll(/(\*\*([^*]+)\*\*|`([^`]+)`)/g)];
+  const matches = [...(text || "").matchAll(/(\*\*([^*]+)\*\*|\*([^*\n]+)\*|`([^`]+)`)/g)];
   if (!matches.length) return text;
 
   const parts = [];
   let cursor = 0;
 
   matches.forEach((match, index) => {
-    const [fullMatch, , boldText, codeText] = match;
+    const [fullMatch, , boldText, singleStarText, codeText] = match;
     const matchIndex = match.index ?? 0;
 
     if (matchIndex > cursor) {
       parts.push(text.slice(cursor, matchIndex));
     }
 
-    if (boldText) {
+    if (boldText || singleStarText) {
       parts.push(
         <strong key={`${keyPrefix}-strong-${index}`}>
-          {boldText}
+          {boldText || singleStarText}
         </strong>
       );
     } else if (codeText) {
