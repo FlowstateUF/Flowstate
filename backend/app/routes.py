@@ -1278,7 +1278,7 @@ def register_routes(app):
         chapter_title = (data.get("chapter_title") or "").strip()
         chapter_id = data.get("chapter_id")
         difficulty = str(data.get("difficulty") or "1")
-        num_questions = int(data.get("num_questions") or 5)
+        num_questions = int(data.get("num_questions") or 10)
 
         if not textbook_id:
             return jsonify({"error": "textbook_id required"}), 400

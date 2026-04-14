@@ -302,7 +302,7 @@ class LLMService:
     def shuffleQuestionsChoices(self, questions: list[dict]) -> list[dict]:
         return [self.shuffleQuestionChoices(question) for question in questions]
     
-    def generate_quiz(self, context, difficulty="easy", num_questions=5, temp=0.3):
+    def generate_quiz(self, context, difficulty="easy", num_questions=10, temp=0.3):
         prompt = MC_MIXED_PROMPT.format(
             context=context,
             num_questions=num_questions,
