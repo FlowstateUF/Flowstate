@@ -114,6 +114,50 @@ def fetch_all_chunks(textbook_id: str, chapter_title: str, user_id: str) -> list
 
     return all_results
 
+def fetch_page_chunks(textbook_id: str, user_id: str, page_number: int) -> list[dict]:
+    flt = Filter(must=[
+        FieldCondition(key="user_id", match=MatchValue(value=str(user_id))),
+        FieldCondition(key="textbook_id", match=MatchValue(value=str(textbook_id))),
+    ])
+
+    matching_results = []
+    offset = None
+
+    while True:
+        results, offset = qdrant.scroll(
+            collection_name="chunks",
+            scroll_filter=flt,
+            limit=100,
+            offset=offset,
+            with_payload=True,
+            with_vectors=False,
+        )
+
+        for point in results:
+            payload = point.payload or {}
+            page_start = payload.get("page_start") or payload.get("page_number")
+            page_end = payload.get("page_end") or page_start
+
+            if not isinstance(page_start, int):
+                continue
+
+            if not isinstance(page_end, int):
+                page_end = page_start
+
+            if page_start <= page_number <= page_end:
+                matching_results.append(point)
+
+        if offset is None:
+            break
+
+    return sorted(
+        matching_results,
+        key=lambda point: (
+            ((point.payload or {}).get("page_start") or (point.payload or {}).get("page_number") or 0),
+            ((point.payload or {}).get("chunk_index") or 0),
+        ),
+    )
+
 def delete_textbook_chunks(user_id: str, textbook_id: str):
     flt = Filter(must=[
         FieldCondition(key="user_id", match=MatchValue(value=str(user_id))),

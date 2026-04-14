@@ -12,7 +12,6 @@ import {
   Notification,
   Paper,
   Loader,
-  RingProgress,
   SimpleGrid,
   Stack,
   Text,
@@ -61,6 +60,57 @@ function BookPlaceholderIcon() {
       <path d="M7 15h7" stroke="#9aa3ad" strokeWidth="1.5" strokeLinecap="round" />
       <path d="M5 5.5A2.5 2.5 0 0 0 2.5 8v10A2.5 2.5 0 0 1 5 15.5h2V5.5H5Z" fill="#d8dee7" />
     </svg>
+  );
+}
+
+const HISTORY_PROGRESS_COLORS = {
+  blue: "#4f8ef7",
+  violet: "#8b5cf6",
+  teal: "#12b886",
+  yellow: "#f59f00",
+  red: "#ef4444",
+};
+
+function HistoryProgressRing({ value, label, color }) {
+  const size = 128;
+  const strokeWidth = 12;
+  const radius = (size - strokeWidth) / 2;
+  const circumference = 2 * Math.PI * radius;
+  const normalizedValue = clamp(Math.round(value ?? 0), 0, 100);
+  const dashOffset = circumference * (1 - normalizedValue / 100);
+  const strokeColor = HISTORY_PROGRESS_COLORS[color] || HISTORY_PROGRESS_COLORS.blue;
+
+  return (
+    <div className="history-progressRing" aria-label={`Textbook progress ${label}`}>
+      <svg
+        className="history-progressSvg"
+        width={size}
+        height={size}
+        viewBox={`0 0 ${size} ${size}`}
+        aria-hidden="true"
+      >
+        <circle
+          className="history-progressTrack"
+          cx={size / 2}
+          cy={size / 2}
+          r={radius}
+          strokeWidth={strokeWidth}
+        />
+        <circle
+          className="history-progressValue"
+          cx={size / 2}
+          cy={size / 2}
+          r={radius}
+          strokeWidth={strokeWidth}
+          stroke={strokeColor}
+          strokeDasharray={circumference}
+          strokeDashoffset={dashOffset}
+        />
+      </svg>
+      <div className="history-progressLabelWrap">
+        <span className="history-progressLabel">{label}</span>
+      </div>
+    </div>
   );
 }
 
@@ -1182,23 +1232,10 @@ const handleCoverUpload = (bookId, file) => {
                           </div>
                         ) : (
                           <div className="history-progressWrap">
-                            <RingProgress
-                              size={128}
-                              thickness={12}
-                              roundCaps
-                              sections={[
-                                {
-                                  value: presentation.value,
-                                  color: presentation.color,
-                                },
-                              ]}
-                              label={
-                                <div className="history-progressLabelWrap">
-                                  <span className="history-progressLabel">
-                                    {presentation.centerLabel}
-                                  </span>
-                                </div>
-                              }
+                            <HistoryProgressRing
+                              value={presentation.value}
+                              label={presentation.centerLabel}
+                              color={presentation.color}
                             />
                           </div>
                         )}

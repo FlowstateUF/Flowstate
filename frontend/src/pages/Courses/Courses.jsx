@@ -6,9 +6,21 @@ import "./Courses.css";
 
 const HERO_BG =
   "data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='1600' height='900'%3E%3Cdefs%3E%3ClinearGradient id='g' x1='0' y1='0' x2='1' y2='1'%3E%3Cstop stop-color='%230b1220'/%3E%3Cstop offset='1' stop-color='%231f2937'/%3E%3C/linearGradient%3E%3C/defs%3E%3Crect width='1600' height='900' fill='url(%23g)'/%3E%3Ccircle cx='350' cy='320' r='220' fill='%233186d6' opacity='0.25'/%3E%3Ccircle cx='1200' cy='520' r='260' fill='%23ffffff' opacity='0.10'/%3E%3C/svg%3E";
+const TEXTBOOK_UPLOAD_LIMIT_MB = 50;
+const TEXTBOOK_UPLOAD_LIMIT_BYTES = TEXTBOOK_UPLOAD_LIMIT_MB * 1000 * 1000;
 
 function formatDisplayTitle(name = "") {
   return name.toLowerCase().endsWith(".pdf") ? name.slice(0, -4) : name;
+}
+
+// Builds the upload-limit message before we even send the file.
+function buildUploadLimitMessage(fileSizeBytes) {
+  if (typeof fileSizeBytes === "number" && fileSizeBytes > 0) {
+    const fileSizeMb = fileSizeBytes / (1000 * 1000);
+    return `This PDF is ${fileSizeMb.toFixed(1)} MB, but uploads are capped at ${TEXTBOOK_UPLOAD_LIMIT_MB} MB right now. Until founders update services, please upload a file under 50 MB.`;
+  }
+
+  return `Uploads are capped at ${TEXTBOOK_UPLOAD_LIMIT_MB} MB right now. Until founders update services, please upload a file under 50 MB.`;
 }
 
 function IconPaperMath() {
@@ -85,6 +97,13 @@ function Courses() {
     if (!isPdf) {
       setSelectedFile(null);
       setError("Please upload a PDF file.");
+      e.target.value = "";
+      return;
+    }
+
+    if (file.size > TEXTBOOK_UPLOAD_LIMIT_BYTES) {
+      setSelectedFile(file);
+      setError(buildUploadLimitMessage(file.size));
       e.target.value = "";
       return;
     }
