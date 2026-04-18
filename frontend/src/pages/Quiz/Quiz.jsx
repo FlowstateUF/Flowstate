@@ -11,6 +11,7 @@ import {
   Button,
   Badge,
   Loader,
+  Modal,
 } from "@mantine/core";
 import { useNavigate, useLocation } from "react-router-dom";
 
@@ -48,9 +49,43 @@ function formatQuestionType(type) {
   return value.charAt(0).toUpperCase() + value.slice(1);
 }
 
-function normalizeQuestions(rawQuestions = []) {
-  return rawQuestions.map((question, questionIndex) => ({
+function normalizeQuizMode(difficulty) {
+  const value = String(difficulty || "").trim().toLowerCase();
+  if (value === "3" || value === "hard") return "hard";
+  if (value === "2" || value === "medium") return "medium";
+  return "easy";
+}
+
+function getQuizDifficultyBadgeColor(mode) {
+  if (mode === "hard") return "red";
+  if (mode === "medium") return "orange";
+  return "green";
+}
+
+function renumberQuestions(questionList = []) {
+  return questionList.map((question, questionIndex) => ({
+    ...question,
     title: `Question ${questionIndex + 1}`,
+  }));
+}
+
+function removeIndexFromMap(indexedValues, removedIndex) {
+  const nextValues = {};
+
+  Object.entries(indexedValues || {}).forEach(([key, value]) => {
+    const numericKey = Number(key);
+    if (Number.isNaN(numericKey) || numericKey === removedIndex) {
+      return;
+    }
+
+    nextValues[numericKey > removedIndex ? numericKey - 1 : numericKey] = value;
+  });
+
+  return nextValues;
+}
+
+function normalizeQuestions(rawQuestions = []) {
+  return renumberQuestions(rawQuestions.map((question) => ({
     prompt: question.question,
     choices: [
       question.choices?.A ?? "",
@@ -63,7 +98,7 @@ function normalizeQuestions(rawQuestions = []) {
     citation: question.citation || null,
     explanation: question.explanation || null,
     type: question.type || null,
-  }));
+  })));
 }
 
 function buildResultState({
@@ -125,12 +160,10 @@ export default function Quiz() {
   const [savingDraft, setSavingDraft] = useState(false);
   const [error, setError] = useState("");
   const [quizId, setQuizId] = useState(null);
+  const [reportedQuestions, setReportedQuestions] = useState([]);
+  const [reportModalOpen, setReportModalOpen] = useState(false);
   const sessionStartedAtRef = useRef(null);
-  const [quizMode, setQuizMode] = useState(() => {
-    if (difficulty === "4") return "hard";
-    if (difficulty === "3") return "medium";
-    return "easy";
-  });
+  const [quizMode, setQuizMode] = useState(() => normalizeQuizMode(difficulty));
   const [quizStarted, setQuizStarted] = useState(isPretest);
 
   const selectedQuizMode =
@@ -156,6 +189,36 @@ export default function Quiz() {
 
   const selectConfidence = (confidence) => {
     setConfidenceByIndex((previous) => ({ ...previous, [index]: confidence }));
+  };
+
+  const openReportModal = () => {
+    if (isPretest || !current || questions.length <= 1) return;
+    setReportModalOpen(true);
+  };
+
+  const closeReportModal = () => {
+    setReportModalOpen(false);
+  };
+
+  const reportCurrentQuestion = () => {
+    if (isPretest || !current) return;
+
+    if (questions.length <= 1) {
+      return;
+    }
+
+    setReportedQuestions((previous) => [
+      ...previous,
+      {
+        ...current,
+        status: "reported",
+      },
+    ]);
+    setQuestions((previous) => renumberQuestions(previous.filter((_, questionIndex) => questionIndex !== index)));
+    setSelectedByIndex((previous) => removeIndexFromMap(previous, index));
+    setConfidenceByIndex((previous) => removeIndexFromMap(previous, index));
+    setIndex((previousIndex) => Math.max(0, Math.min(previousIndex, questions.length - 2)));
+    setReportModalOpen(false);
   };
 
   const goBackToDashboard = () => {
@@ -303,6 +366,7 @@ export default function Quiz() {
       setIndex(0);
       setSelectedByIndex({});
       setConfidenceByIndex({});
+      setReportedQuestions([]);
       setQuizId(payload.quiz_id || null);
       sessionStartedAtRef.current = Date.now();
     } catch (fetchError) {
@@ -362,6 +426,7 @@ export default function Quiz() {
       setIndex(0);
       setSelectedByIndex({});
       setConfidenceByIndex({});
+      setReportedQuestions([]);
       setQuizId(payload.pretest_id || null);
       sessionStartedAtRef.current = Date.now();
       restoreDraftState(payload.attempt);
@@ -475,6 +540,24 @@ export default function Quiz() {
       };
     });
 
+    const reportedResponses = reportedQuestions.map((question, reportedIndex) => ({
+      questionIndex: `reported-${reportedIndex}`,
+      title: "Reported question",
+      prompt: question.prompt,
+      selectedIndex: null,
+      selectedAnswer: null,
+      selectedText: null,
+      correctIndex: question.correctIndex,
+      correctAnswer: question.correctAnswer,
+      correctText: question.choices[question.correctIndex],
+      isCorrect: false,
+      citation: question.citation,
+      explanation: question.explanation,
+      type: question.type,
+      confidence: null,
+      isReported: true,
+    }));
+
     const score = responses.reduce(
       (currentScore, response) => currentScore + (response.isCorrect ? 1 : 0),
       0
@@ -487,6 +570,7 @@ export default function Quiz() {
         confidence: r.confidence,
       };
     });
+    answers.__reported_count = reportedQuestions.length;
 
     const started = sessionStartedAtRef.current;
     const timeStudied = Math.max(
@@ -529,7 +613,7 @@ export default function Quiz() {
       difficulty: quizDifficulty,
       score,
       total,
-      responses,
+      responses: [...responses, ...reportedResponses],
     }),
   });
 };
@@ -537,6 +621,28 @@ export default function Quiz() {
   return (
     <main className="quiz-page">
       <Container fluid className="quiz-shell">
+        <Modal
+          opened={reportModalOpen}
+          onClose={closeReportModal}
+          title="Report question?"
+          centered
+          radius="lg"
+        >
+          <Stack gap="lg">
+            <Text size="sm">
+              Report this question and skip it? Will not impact your quiz score.
+            </Text>
+            <Group justify="flex-end">
+              <Button variant="default" onClick={closeReportModal}>
+                Cancel
+              </Button>
+              <Button color="red" onClick={reportCurrentQuestion}>
+                Report & skip
+              </Button>
+            </Group>
+          </Stack>
+        </Modal>
+
         <Group justify="space-between" align="center" className="quiz-header">
           <div>
             <Group gap="sm" align="center">
@@ -615,7 +721,12 @@ export default function Quiz() {
 
         {!isPretest && quizStarted ? (
           <Group justify="flex-end" className="quiz-config-row">
-            <Badge variant="light">{selectedQuizMode.label}</Badge>
+            <Badge
+              variant="light"
+              color={getQuizDifficultyBadgeColor(selectedQuizMode.value)}
+            >
+              {selectedQuizMode.label}
+            </Badge>
           </Group>
         ) : null}
 
@@ -654,17 +765,31 @@ export default function Quiz() {
                   <Text fw={700} className="quiz-question-title">
                     {current.title}
                   </Text>
-                  {current.type ? (
-                    <Badge
-                      variant="light"
-                      color={isPretest ? "orange" : "blue"}
-                      className="quiz-question-type"
-                    >
-                      {formatQuestionType(current.type)}
-                    </Badge>
-                  ) : null}
+                  <Stack gap={6} align="flex-end" className="quiz-question-meta">
+                    {current.type ? (
+                      <Badge
+                        variant="light"
+                        color={isPretest ? "orange" : "blue"}
+                        className="quiz-question-type"
+                      >
+                        {formatQuestionType(current.type)}
+                      </Badge>
+                    ) : null}
+                  </Stack>
                 </Group>
                 <Text className="quiz-question-text">{current.prompt}</Text>
+                {!isPretest ? (
+                  <Group justify="flex-end" className="quiz-question-actions">
+                    <button
+                      type="button"
+                      className="quiz-report-link"
+                      onClick={openReportModal}
+                      disabled={questions.length <= 1}
+                    >
+                      Looks off?
+                    </button>
+                  </Group>
+                ) : null}
               </Stack>
             </Paper>
 

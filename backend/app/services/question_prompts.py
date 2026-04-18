@@ -201,20 +201,18 @@ First, internally identify {num_questions} DISTINCT concepts from the context.
 DIFFICULTY: {difficulty}
 
 DIFFICULTY RULES:
+- Use this exact question-type mix for the final {num_questions} questions:
+{type_distribution}
+- Match these counts exactly in the final output.
+
 If difficulty is EASY:
-- Most questions should be Recall
-- Some questions should be Understand
 - No scenario-based questions
 
 If difficulty is MEDIUM:
-- Most questions should be Understand
-- Some questions should be Apply
 - Apply questions must be simple and single-step
 
 If difficulty is HARD:
-- Most questions should be Analyze
-- Some questions should be Apply
-- Hard questions should involve comparison, reasoning, or distinguishing between concepts
+- Hard questions should lean on comparison, reasoning, or distinguishing between concepts
 
 GLOBAL QUESTION RULES:
 - Each question must test a DIFFERENT concept

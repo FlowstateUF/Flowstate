@@ -657,6 +657,23 @@ def confidence_label_to_percent(label) -> float | None:
     return lookup.get(normalized)
 
 
+# Reads how many questions were reported and skipped on one quiz attempt.
+def get_reported_question_count(answers) -> int:
+    if not isinstance(answers, dict):
+        return 0
+
+    raw_count = answers.get("__reported_count", 0)
+    try:
+        return max(0, int(raw_count or 0))
+    except (TypeError, ValueError):
+        return 0
+
+
+# Skips heavily reported quizzes in mastery/confidence stats, but not activity logs.
+def should_skip_quiz_attempt_analytics(row: dict) -> bool:
+    return get_reported_question_count(row.get("answers")) > 2
+
+
 def classify_confidence_gap(confidence_ratio: float, actual_ratio: float) -> str:
     confidence = max(0.0, min(1.0, float(confidence_ratio or 0)))
     actual = max(0.0, min(1.0, float(actual_ratio or 0)))
@@ -839,6 +856,8 @@ def get_textbook_dashboard_snapshot(
     # --- Mastery: average quiz score % per chapter
     best_by_quiz: dict[str, float] = {}
     for row in quiz_attempts:
+        if should_skip_quiz_attempt_analytics(row):
+            continue
         qid = str(row.get("quiz_id") or "")
         score = row.get("score")
         total = row.get("total_questions")
@@ -869,6 +888,8 @@ def get_textbook_dashboard_snapshot(
 
     confidence_gap_points: list[dict] = []
     for row in quiz_attempts:
+        if should_skip_quiz_attempt_analytics(row):
+            continue
         answers = row.get("answers") or {}
         if not isinstance(answers, dict):
             continue
@@ -876,7 +897,11 @@ def get_textbook_dashboard_snapshot(
         question_points = []
         answer_key_list = quiz_answer_keys.get(str(row.get("quiz_id") or ""), [])
         ordered_answers = sorted(
-            answers.items(),
+            [
+                (key, value)
+                for key, value in answers.items()
+                if str(key).isdigit()
+            ],
             key=lambda item: int(item[0]) if str(item[0]).isdigit() else 9999,
         )
         for index, (_, value) in enumerate(ordered_answers):

@@ -26,6 +26,36 @@ def flush_paragraph_block(paragraph_lines: list[str], blocks: list[dict]):
         })
 
 
+# Sets the target mix of quiz question types for each difficulty.
+def build_quiz_type_distribution(difficulty: str, num_questions: int) -> str:
+    difficulty_key = (difficulty or "easy").strip().lower()
+    total_questions = max(1, int(num_questions or 1))
+
+    ratio_map = {
+        "easy": [("recall", 0.7), ("understand", 0.3)],
+        "medium": [("recall", 0.2), ("understand", 0.5), ("apply", 0.3)],
+        "hard": [("understand", 0.2), ("apply", 0.4), ("analyze", 0.4)],
+    }
+    ratios = ratio_map.get(difficulty_key, ratio_map["easy"])
+
+    counts = {question_type: int(total_questions * ratio) for question_type, ratio in ratios}
+    allocated = sum(counts.values())
+    remainders = sorted(
+        [
+            ((total_questions * ratio) - counts[question_type], question_type)
+            for question_type, ratio in ratios
+        ],
+        reverse=True,
+    )
+
+    for _, question_type in remainders[: max(0, total_questions - allocated)]:
+        counts[question_type] += 1
+
+    return "\n".join(
+        f"- {count} {question_type}" for question_type, count in counts.items() if count > 0
+    )
+
+
 # Handles prompt building and response cleanup for Flo and study tools.
 class LLMService:
     
@@ -470,16 +500,18 @@ class LLMService:
         return [self.shuffle_question_choices(question) for question in questions]
     
     def generate_quiz(self, context, difficulty="easy", num_questions=10, temp=0.3):
+        type_distribution = build_quiz_type_distribution(difficulty, num_questions)
         prompt = MC_MIXED_PROMPT.format(
             context=context,
             num_questions=num_questions,
-            difficulty=difficulty.upper()
+            difficulty=difficulty.upper(),
+            type_distribution=type_distribution,
         )
 
         raw = self.generate_raw(prompt, temperature=temp)
 
         try:
-            result = self._parse_json(raw)
+            result = self.parse_json_response(raw)
         except Exception:
             return {"questions": []}
 
@@ -552,7 +584,7 @@ class LLMService:
                 "citation": citation
             })
 
-        cleaned_questions = self.shuffleQuestionsChoices(cleaned_questions)
+        cleaned_questions = self.shuffle_questions_choices(cleaned_questions)
 
         return {
             "questions": cleaned_questions[:num_questions]
@@ -612,4 +644,4 @@ class LLMService:
             temperature=temperature
         )
 
-        return self._get_response_text(response)
+        return self.get_response_text(response)
