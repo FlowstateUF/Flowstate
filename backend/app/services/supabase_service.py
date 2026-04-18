@@ -135,26 +135,70 @@ def set_textbook_starred_for_user(user_id: str, textbook_id: str, is_starred: bo
     )
     return result.data[0] if result.data else None
 
+# Gets the child record ids we need so delete cleanup stays targeted.
+def get_textbook_child_record_ids(textbook_id: str) -> dict[str, list[str]]:
+    quiz_rows = (
+        supabase.table("quizzes")
+        .select("id")
+        .eq("textbook_id", textbook_id)
+        .execute()
+    ).data or []
+
+    flashcard_set_rows = (
+        supabase.table("flashcard_sets")
+        .select("id")
+        .eq("textbook_id", textbook_id)
+        .execute()
+    ).data or []
+
+    summary_rows = (
+        supabase.table("summaries")
+        .select("id")
+        .eq("textbook_id", textbook_id)
+        .execute()
+    ).data or []
+
+    return {
+        "quiz_ids": [str(row.get("id")) for row in quiz_rows if row.get("id")],
+        "flashcard_set_ids": [str(row.get("id")) for row in flashcard_set_rows if row.get("id")],
+        "summary_ids": [str(row.get("id")) for row in summary_rows if row.get("id")],
+    }
+
+# Deletes rows by id list without blowing up on empty lists.
+def delete_rows_by_ids(table_name: str, column_name: str, ids: list[str]):
+    if not ids:
+        return
+    supabase.table(table_name).delete().in_(column_name, ids).execute()
+
 def delete_textbook_for_user(user_id: str, textbook_id: str) -> dict | None:
     info = get_textbook_info(textbook_id)
     if not info or str(info.get("user_id")) != str(user_id):
         return None
 
     storage_path = info.get("storage_path")
+    child_ids = get_textbook_child_record_ids(textbook_id)
+    quiz_ids = child_ids.get("quiz_ids") or []
+    flashcard_set_ids = child_ids.get("flashcard_set_ids") or []
+    summary_ids = child_ids.get("summary_ids") or []
 
     try:
         supabase.table("pretest_attempts").delete().eq("textbook_id", textbook_id).execute()
     except Exception:
         pass
 
+    delete_rows_by_ids("quiz_attempts", "quiz_id", quiz_ids)
+    delete_rows_by_ids("quiz_questions", "quiz_id", quiz_ids)
+    delete_rows_by_ids("flashcard_sessions", "flashcard_set_id", flashcard_set_ids)
+    delete_rows_by_ids("flashcards", "flashcard_set_id", flashcard_set_ids)
+    delete_rows_by_ids("summary_sessions", "summary_id", summary_ids)
+
     supabase.table("pretests").delete().eq("textbook_id", textbook_id).execute()
-    supabase.table("chunks").delete().eq("textbook_id", textbook_id).execute()
-    supabase.table("chapters").delete().eq("textbook_id", textbook_id).execute()
-    supabase.table("textbooks").delete().eq("id", textbook_id).eq("user_id", user_id).execute()
-    supabase.table("quiz_attempts").delete().eq("quiz_id", ...) # need quiz_ids first
     supabase.table("quizzes").delete().eq("textbook_id", textbook_id).execute()
     supabase.table("flashcard_sets").delete().eq("textbook_id", textbook_id).execute()
     supabase.table("summaries").delete().eq("textbook_id", textbook_id).execute()
+    supabase.table("chunks").delete().eq("textbook_id", textbook_id).execute()
+    supabase.table("chapters").delete().eq("textbook_id", textbook_id).execute()
+    supabase.table("textbooks").delete().eq("id", textbook_id).eq("user_id", user_id).execute()
 
     if storage_path:
         try:
@@ -565,7 +609,8 @@ def summary_owned_by_user(summary_id: str, user_id: str) -> bool:
 
 # Dashboard (might move later)
 
-def _parse_ts(ts) -> datetime | None:
+# Parses a stored timestamp into a timezone-aware datetime.
+def parse_timestamp(ts) -> datetime | None:
     if not ts:
         return None
     s = str(ts).replace("Z", "+00:00")
@@ -573,6 +618,33 @@ def _parse_ts(ts) -> datetime | None:
         return datetime.fromisoformat(s)
     except ValueError:
         return None
+
+
+# Finds which recent-day bucket a timestamp belongs to.
+def get_day_index(dt: datetime | None, day_keys: list) -> int | None:
+    if not dt:
+        return None
+    if dt.tzinfo is None:
+        dt = dt.replace(tzinfo=timezone.utc)
+
+    current_day = dt.astimezone(timezone.utc).date()
+    for index, day_key in enumerate(day_keys):
+        if current_day == day_key:
+            return index
+    return None
+
+
+# Adds one activity event into the right daily bucket.
+def bump_day_bucket(day_bucket: dict[str, dict[str, int]], dt_raw, kind_key: str):
+    dt = parse_timestamp(dt_raw)
+    if not dt:
+        return
+    if dt.tzinfo is None:
+        dt = dt.replace(tzinfo=timezone.utc)
+
+    day_key = dt.astimezone(timezone.utc).date().isoformat()
+    day_bucket[day_key][kind_key] += 1
+    day_bucket[day_key]["total"] += 1
 
 
 def confidence_label_to_percent(label) -> float | None:
@@ -583,6 +655,23 @@ def confidence_label_to_percent(label) -> float | None:
         "high": 1.00,
     }
     return lookup.get(normalized)
+
+
+# Reads how many questions were reported and skipped on one quiz attempt.
+def get_reported_question_count(answers) -> int:
+    if not isinstance(answers, dict):
+        return 0
+
+    raw_count = answers.get("__reported_count", 0)
+    try:
+        return max(0, int(raw_count or 0))
+    except (TypeError, ValueError):
+        return 0
+
+
+# Skips heavily reported quizzes in mastery/confidence stats, but not activity logs.
+def should_skip_quiz_attempt_analytics(row: dict) -> bool:
+    return get_reported_question_count(row.get("answers")) > 2
 
 
 def classify_confidence_gap(confidence_ratio: float, actual_ratio: float) -> str:
@@ -739,32 +828,21 @@ def get_textbook_dashboard_snapshot(
     counts_fc = [0] * 7
     counts_sum = [0] * 7
 
-    def day_index(dt: datetime | None) -> int | None:
-        if not dt:
-            return None
-        if dt.tzinfo is None:
-            dt = dt.replace(tzinfo=timezone.utc)
-        d = dt.astimezone(timezone.utc).date()
-        for i, dk in enumerate(day_keys):
-            if d == dk:
-                return i
-        return None
-
     for row in quiz_attempts:
-        dt = _parse_ts(row.get("completed_at"))
-        idx = day_index(dt)
+        dt = parse_timestamp(row.get("completed_at"))
+        idx = get_day_index(dt, day_keys)
         if idx is not None:
             counts_quiz[idx] += 1
 
     for row in flash_sessions:
-        dt = _parse_ts(row.get("studied_at"))
-        idx = day_index(dt)
+        dt = parse_timestamp(row.get("studied_at"))
+        idx = get_day_index(dt, day_keys)
         if idx is not None:
             counts_fc[idx] += 1
 
     for row in summary_sessions_list:
-        dt = _parse_ts(row.get("studied_at"))
-        idx = day_index(dt)
+        dt = parse_timestamp(row.get("studied_at"))
+        idx = get_day_index(dt, day_keys)
         if idx is not None:
             counts_sum[idx] += 1
 
@@ -778,6 +856,8 @@ def get_textbook_dashboard_snapshot(
     # --- Mastery: average quiz score % per chapter
     best_by_quiz: dict[str, float] = {}
     for row in quiz_attempts:
+        if should_skip_quiz_attempt_analytics(row):
+            continue
         qid = str(row.get("quiz_id") or "")
         score = row.get("score")
         total = row.get("total_questions")
@@ -808,6 +888,8 @@ def get_textbook_dashboard_snapshot(
 
     confidence_gap_points: list[dict] = []
     for row in quiz_attempts:
+        if should_skip_quiz_attempt_analytics(row):
+            continue
         answers = row.get("answers") or {}
         if not isinstance(answers, dict):
             continue
@@ -815,7 +897,11 @@ def get_textbook_dashboard_snapshot(
         question_points = []
         answer_key_list = quiz_answer_keys.get(str(row.get("quiz_id") or ""), [])
         ordered_answers = sorted(
-            answers.items(),
+            [
+                (key, value)
+                for key, value in answers.items()
+                if str(key).isdigit()
+            ],
             key=lambda item: int(item[0]) if str(item[0]).isdigit() else 9999,
         )
         for index, (_, value) in enumerate(ordered_answers):
@@ -842,7 +928,7 @@ def get_textbook_dashboard_snapshot(
             confidence_gap_points.append(point)
 
     confidence_gap_points.sort(
-        key=lambda point: _parse_ts(point.get("completed_at")) or datetime.min.replace(tzinfo=timezone.utc),
+        key=lambda point: parse_timestamp(point.get("completed_at")) or datetime.min.replace(tzinfo=timezone.utc),
         reverse=True,
     )
 
@@ -869,7 +955,7 @@ def get_textbook_dashboard_snapshot(
 
     for row in quiz_attempts:
         qid = str(row.get("quiz_id") or "")
-        dt = _parse_ts(row.get("completed_at"))
+        dt = parse_timestamp(row.get("completed_at"))
         score = row.get("score")
         total = row.get("total_questions")
         pct_s = ""
@@ -889,7 +975,7 @@ def get_textbook_dashboard_snapshot(
     for row in flash_sessions:
         sid = row.get("flashcard_set_id")
         sid_s = str(sid) if sid else ""
-        dt = _parse_ts(row.get("studied_at"))
+        dt = parse_timestamp(row.get("studied_at"))
         unified.append(
             {
                 "kind": "flashcards",
@@ -903,7 +989,7 @@ def get_textbook_dashboard_snapshot(
 
     for row in summary_sessions_list:
         sid = str(row.get("summary_id") or "")
-        dt = _parse_ts(row.get("studied_at"))
+        dt = parse_timestamp(row.get("studied_at"))
         unified.append(
             {
                 "kind": "summary",
@@ -947,22 +1033,12 @@ def get_textbook_dashboard_snapshot(
         lambda: {"quiz": 0, "flashcards": 0, "summaries": 0, "total": 0}
     )
 
-    def bump_day(dt_raw, kind_key: str):
-        dt = _parse_ts(dt_raw)
-        if not dt:
-            return
-        if dt.tzinfo is None:
-            dt = dt.replace(tzinfo=timezone.utc)
-        dk = dt.astimezone(timezone.utc).date().isoformat()
-        day_bucket[dk][kind_key] += 1
-        day_bucket[dk]["total"] += 1
-
     for row in quiz_attempts:
-        bump_day(row.get("completed_at"), "quiz")
+        bump_day_bucket(day_bucket, row.get("completed_at"), "quiz")
     for row in flash_sessions:
-        bump_day(row.get("studied_at"), "flashcards")
+        bump_day_bucket(day_bucket, row.get("studied_at"), "flashcards")
     for row in summary_sessions_list:
-        bump_day(row.get("studied_at"), "summaries")
+        bump_day_bucket(day_bucket, row.get("studied_at"), "summaries")
 
     active_dates = {d for d, v in day_bucket.items() if v["total"] > 0}
 

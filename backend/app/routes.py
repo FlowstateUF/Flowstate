@@ -45,12 +45,21 @@ from app.services.supabase_service import (
     summary_owned_by_user,
 )
 
+from app.services.textbook_helpers import (
+    apply_display_page_labels,
+    build_chapter_range_response,
+    display_page_to_physical_page,
+    filter_rows_for_chapter_content,
+    find_chapter_by_title,
+    find_referenced_chapter,
+)
 from app.services.textbook_service import extract_toc
 from app.services.vector_service import (
     get_collection_info,
     retrieve_context,
     retrieve_relevant_chunks,
     fetch_all_chunks,
+    fetch_page_chunks,
     delete_textbook_chunks,
 )
 
@@ -64,7 +73,34 @@ from app.config import settings
 from flask_jwt_extended import create_access_token, jwt_required, get_jwt_identity
 
 
-def buildStudyContextFromChunks(
+# Builds the upload-limit message users see for oversized PDFs.
+def get_textbook_upload_limit_mb() -> int:
+    return 50
+
+
+# Converts the upload cap into bytes for file checks.
+def get_textbook_upload_limit_bytes() -> int:
+    return get_textbook_upload_limit_mb() * 1000 * 1000
+
+
+# Builds the upload-limit message users see for oversized PDFs.
+def build_upload_limit_message(file_size_bytes: int | None = None) -> str:
+    upload_limit_mb = get_textbook_upload_limit_mb()
+
+    if isinstance(file_size_bytes, int) and file_size_bytes > 0:
+        file_size_mb = file_size_bytes / (1000 * 1000)
+        return (
+            f"This PDF is {file_size_mb:.1f} MB, but uploads are capped at {upload_limit_mb} MB right now. "
+            f"Until founders update services, please upload a file under {upload_limit_mb} MB."
+        )
+
+    return (
+        f"Uploads are capped at {upload_limit_mb} MB right now. "
+        f"Until founders update services, please upload a file under {upload_limit_mb} MB."
+    )
+
+
+def build_study_context_from_chunks(
     rows: list[dict],
     max_chars: int = 12000,
     bucket_count: int = 4,
@@ -186,56 +222,50 @@ def serialize_chat_sources(rows: list[dict], limit: int = 4) -> list[dict]:
         {
             "citation": row.get("citation"),
             "chapter": row.get("chapter"),
-            "page_number": row.get("page_number"),
+            "page_number": row.get("display_page_label") or row.get("page_number"),
             "content": row.get("content"),
             "score": row.get("score"),
         }
         for row in rows[:limit]
     ]
 
-
-def normalizeChapterTitle(title: str) -> str:
-    title = (title or "").strip().lower()
-    title = re.sub(r"^\d+(\.\d+)*[\s.:_-]*", "", title)
-    title = re.sub(r"\s+", " ", title)
-    return title
-
-
-def findReferencedChapter(message: str, chapters: list[dict]) -> dict | None:
-    normalized_message = (message or "").strip().lower()
-    if not normalized_message or not chapters:
+# Pulls a page number out when the user asks for one.
+def extract_requested_page_number(message: str) -> int | None:
+    match = re.search(r"\bpage\s+(\d+)\b", (message or "").strip().lower(), re.IGNORECASE)
+    if not match:
         return None
 
-    chapter_number_match = re.search(r"\bchapter\s+(\d+(?:\.\d+)*)\b", normalized_message)
-    if chapter_number_match:
-        chapter_number = chapter_number_match.group(1)
-        for chapter in chapters:
-            title = (chapter.get("title") or "").strip().lower()
-            if re.match(rf"^{re.escape(chapter_number)}(?:[\s.:_-]|$)", title):
-                return chapter
-
-    for chapter in chapters:
-        normalized_title = normalizeChapterTitle(chapter.get("title") or "")
-        if normalized_title and normalized_title in normalized_message:
-            return chapter
-
-    return None
-
-
-def findChapterByTitle(chapter_title: str, chapters: list[dict]) -> dict | None:
-    normalized_target = normalizeChapterTitle(chapter_title or "")
-    if not normalized_target:
+    try:
+        return int(match.group(1))
+    except (TypeError, ValueError):
         return None
 
-    for chapter in chapters:
-        normalized_title = normalizeChapterTitle(chapter.get("title") or "")
-        if normalized_title == normalized_target:
-            return chapter
+# Packs recent chat turns into a short context string.
+def build_recent_chat_history(history: list[dict], limit: int = 6) -> str:
+    lines = []
 
-    return None
+    for item in (history or [])[-limit:]:
+        if not isinstance(item, dict):
+            continue
+        role = "student" if item.get("role") == "user" else "flo"
+        text = (item.get("text") or "").strip()
+        if not text:
+            continue
+        lines.append(f"{role.title()}: {text}")
+
+    return "\n".join(lines)
+
+# Adds recent chat to retrieval so follow-ups stay grounded.
+def build_retrieval_query(message: str, history: list[dict]) -> str:
+    normalized = (message or "").strip()
+    if not normalized:
+        return ""
+
+    recent_history = build_recent_chat_history(history, limit=4)
+    return f"{recent_history}\nCurrent question: {normalized}".strip() if recent_history else normalized
 
 
-def isChapterOverviewQuery(message: str) -> bool:
+def is_chapter_overview_query(message: str) -> bool:
     normalized_message = (message or "").strip().lower()
     overview_keywords = [
         "summarize",
@@ -248,11 +278,17 @@ def isChapterOverviewQuery(message: str) -> bool:
         "overview",
         "main idea",
         "core idea",
+        "core concepts",
+        "key concepts",
+        "concepts",
+        "topics covered",
+        "list of concepts",
+        "give me a list",
     ]
     return any(keyword in normalized_message for keyword in overview_keywords)
 
 
-def isChapterRangeQuery(message: str) -> bool:
+def is_chapter_range_query(message: str) -> bool:
     normalized_message = (message or "").strip().lower()
     range_keywords = [
         "what page",
@@ -274,24 +310,8 @@ def isChapterRangeQuery(message: str) -> bool:
     ]
     return any(keyword in normalized_message for keyword in range_keywords)
 
-
-def buildChapterRangeResponse(chapter: dict) -> tuple[str, list[str]]:
-    title = (chapter.get("title") or "").strip()
-    start_page = chapter.get("start_page")
-    end_page = chapter.get("end_page")
-
-    if start_page is None:
-        return (f"I found {title}, but its page range is not available.", [])
-
-    if end_page in (None, start_page):
-        citation = f"Page {start_page}"
-        return (f'{title} starts on {citation.lower()} of the textbook.', [citation])
-
-    citation = f"Pages {start_page}-{end_page}"
-    return (f'{title} spans {citation.lower()} of the textbook.', [citation])
-
-
-def rowsFromQdrantPoints(points: list, chapter: dict | None = None) -> list[dict]:
+# Packs raw qdrant hits into the shape the chat flow expects.
+def rows_from_qdrant_points(points: list, chapter: dict | None = None) -> list[dict]:
     rows = []
     chapter_start = chapter.get("start_page") if chapter else None
     chapter_end = chapter.get("end_page") if chapter else None
@@ -318,16 +338,17 @@ def rowsFromQdrantPoints(points: list, chapter: dict | None = None) -> list[dict
             "content": content,
             "citation": citation,
             "page_number": page_number,
+            "page_end": payload.get("page_end"),
             "chapter": payload.get("chapter"),
             "score": getattr(point, "score", None),
         })
 
     return rows
 
-
-def buildChapterScopedRows(textbook_id: str, chapter_title: str, user_id: str) -> tuple[list[dict], dict | None]:
+# Pulls all chunks for one chapter in page order.
+def build_chapter_scoped_rows(textbook_id: str, chapter_title: str, user_id: str) -> tuple[list[dict], dict | None]:
     chapters = get_toc(textbook_id) or []
-    matched_chapter = findChapterByTitle(chapter_title, chapters)
+    matched_chapter = find_chapter_by_title(chapter_title, chapters)
 
     points = fetch_all_chunks(
         textbook_id=textbook_id,
@@ -335,12 +356,14 @@ def buildChapterScopedRows(textbook_id: str, chapter_title: str, user_id: str) -
         user_id=user_id
     )
 
-    rows = rowsFromQdrantPoints(points, matched_chapter)
+    rows = rows_from_qdrant_points(points, matched_chapter)
+    rows = apply_display_page_labels(rows, chapters)
     rows = sorted(rows, key=lambda row: row.get("page_number") or 0)
     return rows, matched_chapter
 
 
-def _serialize_pretest_attempt(attempt: dict | None) -> dict | None:
+# Shapes a saved pretest attempt for the frontend.
+def serialize_pretest_attempt(attempt: dict | None) -> dict | None:
     if not attempt:
         return None
 
@@ -370,7 +393,8 @@ def normalizeConfidenceLabel(raw_confidence) -> str | None:
     return normalized if normalized in {"low", "medium", "high"} else None
 
 
-def _score_pretest_attempt(questions: list[dict], answers: list, confidences: list | None = None) -> tuple[int, list[dict]]:
+# Scores the submitted answers and builds the response breakdown.
+def score_pretest_attempt(questions: list[dict], answers: list, confidences: list | None = None) -> tuple[int, list[dict]]:
     answer_labels = ["A", "B", "C", "D"]
     responses = []
     score = 0
@@ -407,9 +431,6 @@ def _score_pretest_attempt(questions: list[dict], answers: list, confidences: li
 
     return score, responses
 
-
-# ** Where HTTP routes are written **
-# register_routes is called in init.py, giving it access to all the routes below 
 
 def register_routes(app):
     
@@ -523,6 +544,12 @@ def register_routes(app):
         try:
             print("[upload] reading file")
             file_bytes = file.read()
+            if len(file_bytes) > get_textbook_upload_limit_bytes():
+                return jsonify({
+                    "error": build_upload_limit_message(len(file_bytes)),
+                    "limit_mb": get_textbook_upload_limit_mb(),
+                }), 413
+
             file_hash = hashlib.sha256(file_bytes).hexdigest()
 
             # Check if this user already uploaded this file
@@ -560,6 +587,12 @@ def register_routes(app):
         except Exception as e:
             print("[upload] FAILED:", repr(e))
             traceback.print_exc()
+            error_text = str(e)
+            if "payload too large" in error_text.lower() or "maximum allowed size" in error_text.lower():
+                return jsonify({
+                    "error": build_upload_limit_message(),
+                    "limit_mb": get_textbook_upload_limit_mb(),
+                }), 413
             return jsonify({"error": str(e)}), 500
 
         try:
@@ -708,6 +741,7 @@ def register_routes(app):
 
         data = request.get_json(silent=True) or {}
         message = (data.get("message") or "").strip()
+        history = data.get("history") if isinstance(data.get("history"), list) else []
         top_k = int(data.get("top_k") or 6)
 
         if not message:
@@ -719,38 +753,66 @@ def register_routes(app):
         top_k = max(3, min(top_k, 10))
 
         chapters = get_toc(textbook_id) or []
-        matched_chapter = findReferencedChapter(message, chapters)
+        matched_chapter = find_referenced_chapter(message, chapters)
+        recent_chat_history = build_recent_chat_history(history)
+        retrieval_query = build_retrieval_query(message, history)
 
-        if matched_chapter and isChapterRangeQuery(message):
-            answer, citations = buildChapterRangeResponse(matched_chapter)
+        if matched_chapter and is_chapter_range_query(message):
+            answer, citations = build_chapter_range_response(matched_chapter, chapters)
             return jsonify({
                 "status": "success",
                 "textbook_id": str(textbook_id),
                 "textbook_title": display_title(textbook.get("title") or "Untitled textbook"),
                 "message": answer,
+                "answer_blocks": [{
+                    "type": "paragraph",
+                    "text": answer,
+                    "citations": citations,
+                }],
                 "grounded": True,
                 "citations": citations,
                 "sources": [],
                 "matched_chapter": matched_chapter,
             }), 200
 
-        if matched_chapter and isChapterOverviewQuery(message):
+        if matched_chapter and is_chapter_overview_query(message):
             points = fetch_all_chunks(
                 textbook_id=str(textbook_id),
                 chapter_title=matched_chapter.get("title"),
                 user_id=str(user_id),
             )
             points = sorted(points, key=lambda point: ((point.payload or {}).get("page_start") or 0))
-            rows = rowsFromQdrantPoints(points, matched_chapter)
+            rows = rows_from_qdrant_points(points, matched_chapter)
+            rows = apply_display_page_labels(rows, chapters)
+            rows = filter_rows_for_chapter_content(rows)
         else:
             chapter_title = matched_chapter.get("title") if matched_chapter else None
-            rows = retrieve_relevant_chunks(
-                user_id=str(user_id),
-                textbook_id=str(textbook_id),
-                query=message,
-                top_k=top_k,
-                chapter_title=chapter_title,
-            )
+            requested_page = extract_requested_page_number(message)
+            if requested_page is not None:
+                physical_page = display_page_to_physical_page(requested_page, chapters)
+                points = fetch_page_chunks(
+                    textbook_id=str(textbook_id),
+                    user_id=str(user_id),
+                    page_number=physical_page if physical_page is not None else requested_page,
+                )
+                rows = rows_from_qdrant_points(points, matched_chapter)
+                rows = apply_display_page_labels(rows, chapters)
+                if matched_chapter:
+                    rows = filter_rows_for_chapter_content(rows)
+            else:
+                rows = []
+
+            if not rows:
+                rows = retrieve_relevant_chunks(
+                    user_id=str(user_id),
+                    textbook_id=str(textbook_id),
+                    query=retrieval_query or message,
+                    top_k=top_k,
+                    chapter_title=chapter_title,
+                )
+                rows = apply_display_page_labels(rows, chapters)
+                if matched_chapter:
+                    rows = filter_rows_for_chapter_content(rows)
 
         if not rows:
             return jsonify({
@@ -758,19 +820,29 @@ def register_routes(app):
                 "textbook_id": str(textbook_id),
                 "textbook_title": display_title(textbook.get("title") or "Untitled textbook"),
                 "message": "I’m not sure this textbook clearly covers that. Try asking about a specific concept, definition, or example from the book.",
+                "answer_blocks": [{
+                    "type": "paragraph",
+                    "text": "I’m not sure this textbook clearly covers that. Try asking about a specific concept, definition, or example from the book.",
+                    "citations": [],
+                }],
                 "grounded": False,
                 "citations": [],
                 "sources": [],
                 "matched_chapter": matched_chapter,
             }), 200
 
-        context = build_chat_context(rows, max_chars=14000 if matched_chapter and isChapterOverviewQuery(message) else 10000)
+        context = build_chat_context(rows, max_chars=14000 if matched_chapter and is_chapter_overview_query(message) else 10000)
         if not context.strip():
             return jsonify({
                 "status": "success",
                 "textbook_id": str(textbook_id),
                 "textbook_title": display_title(textbook.get("title") or "Untitled textbook"),
                 "message": "I found matching textbook chunks, but they were not clear enough to answer confidently.",
+                "answer_blocks": [{
+                    "type": "paragraph",
+                    "text": "I found matching textbook chunks, but they were not clear enough to answer confidently.",
+                    "citations": [],
+                }],
                 "grounded": False,
                 "citations": [],
                 "sources": serialize_chat_sources(rows),
@@ -782,6 +854,7 @@ def register_routes(app):
             textbook_title=display_title(textbook.get("title") or "Untitled textbook"),
             question=message,
             context=context,
+            chat_history=recent_chat_history,
             temp=0.2,
         )
 
@@ -790,6 +863,7 @@ def register_routes(app):
             "textbook_id": str(textbook_id),
             "textbook_title": display_title(textbook.get("title") or "Untitled textbook"),
             "message": result.get("answer"),
+            "answer_blocks": result.get("answer_blocks", []),
             "grounded": result.get("grounded"),
             "citations": result.get("citations", []),
             "sources": serialize_chat_sources(rows),
@@ -811,7 +885,7 @@ def register_routes(app):
 
         pretest = get_pretest(textbook_id, chapter_id)
         attempt = get_pretest_attempt(user_id, textbook_id, chapter_id)
-        attempt_payload = _serialize_pretest_attempt(attempt)
+        attempt_payload = serialize_pretest_attempt(attempt)
 
         return jsonify({
             "chapter_id": chapter_id,
@@ -842,7 +916,7 @@ def register_routes(app):
 
         attempt = get_pretest_attempt(user_id, textbook_id, chapter_id)
 
-        attempt_payload = _serialize_pretest_attempt(attempt)
+        attempt_payload = serialize_pretest_attempt(attempt)
 
         return jsonify({
             "chapter_id": chapter_id,
@@ -872,7 +946,7 @@ def register_routes(app):
             return jsonify({"error": "Pretest not available for this chapter yet"}), 404
 
         existing_attempt = get_pretest_attempt(user_id, textbook_id, chapter_id)
-        existing_payload = _serialize_pretest_attempt(existing_attempt)
+        existing_payload = serialize_pretest_attempt(existing_attempt)
         if existing_payload and existing_payload.get("status") == "completed":
             return jsonify({
                 "error": "Pretest already completed for this chapter",
@@ -909,7 +983,7 @@ def register_routes(app):
             "status": "success",
             "chapter_id": chapter_id,
             "chapter_title": chapter.get("title"),
-            "attempt": _serialize_pretest_attempt(attempt),
+            "attempt": serialize_pretest_attempt(attempt),
         }), 200
 
     @app.post("/api/textbooks/<textbook_id>/chapters/<chapter_id>/pretest/submit")
@@ -930,7 +1004,7 @@ def register_routes(app):
             return jsonify({"error": "Pretest not available for this chapter yet"}), 404
 
         existing_attempt = get_pretest_attempt(user_id, textbook_id, chapter_id)
-        existing_payload = _serialize_pretest_attempt(existing_attempt)
+        existing_payload = serialize_pretest_attempt(existing_attempt)
         if existing_payload and existing_payload.get("status") == "completed":
             return jsonify({
                 "error": "Pretest already completed for this chapter",
@@ -954,7 +1028,7 @@ def register_routes(app):
             if len(confidences) != len(questions):
                 return jsonify({"error": "confidences must include one response per question"}), 400
 
-        score, responses = _score_pretest_attempt(questions, answers, confidences)
+        score, responses = score_pretest_attempt(questions, answers, confidences)
         attempt = complete_pretest_attempt(
             user_id=str(user_id),
             textbook_id=str(textbook_id),
@@ -971,7 +1045,7 @@ def register_routes(app):
             "chapter_id": chapter_id,
             "chapter_title": chapter.get("title"),
             "quiz_unlocked": True,
-            "attempt": _serialize_pretest_attempt(attempt),
+            "attempt": serialize_pretest_attempt(attempt),
         }), 201
 
 
@@ -1156,7 +1230,7 @@ def register_routes(app):
         if not owned.data:
             return jsonify({"error": "Textbook not found or unauthorized"}), 404
 
-        rows, matched_chapter = buildChapterScopedRows(
+        rows, matched_chapter = build_chapter_scoped_rows(
             textbook_id=textbook_id,
             chapter_title=chapter_title,
             user_id=user_id
@@ -1164,7 +1238,7 @@ def register_routes(app):
         if not rows:
             return jsonify({"error": "No chunks found for that chapter"}), 400
 
-        context = buildStudyContextFromChunks(rows, max_chars=16000)
+        context = build_study_context_from_chunks(rows, max_chars=16000)
         if not context.strip():
             return jsonify({"error": "Empty context after filtering"}), 400
 
@@ -1219,7 +1293,7 @@ def register_routes(app):
         if not owned.data:
             return jsonify({"error": "Textbook not found or unauthorized"}), 404
 
-        rows, matched_chapter = buildChapterScopedRows(
+        rows, matched_chapter = build_chapter_scoped_rows(
             textbook_id=textbook_id,
             chapter_title=chapter_title,
             user_id=user_id
@@ -1228,7 +1302,7 @@ def register_routes(app):
         if not rows:
             return jsonify({"error": "No chunks found for that chapter"}), 400
 
-        context = buildStudyContextFromChunks(rows, max_chars=14000)
+        context = build_study_context_from_chunks(rows, max_chars=14000)
         if not context.strip():
             return jsonify({"error": "Empty context after filtering"}), 400
 
@@ -1307,7 +1381,7 @@ def register_routes(app):
         if not owned.data:
             return jsonify({"error": "Textbook not found or unauthorized"}), 404
 
-        rows, matched_chapter = buildChapterScopedRows(
+        rows, matched_chapter = build_chapter_scoped_rows(
             textbook_id=textbook_id,
             chapter_title=chapter_title,
             user_id=user_id
@@ -1316,7 +1390,7 @@ def register_routes(app):
         if not rows:
             return jsonify({"error": "No chunks found for that chapter"}), 400
 
-        context = buildStudyContextFromChunks(rows, max_chars=14000)
+        context = build_study_context_from_chunks(rows, max_chars=14000)
         if not context.strip():
             return jsonify({"error": "Empty context after filtering"}), 400
 

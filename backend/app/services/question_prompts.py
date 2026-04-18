@@ -201,20 +201,18 @@ First, internally identify {num_questions} DISTINCT concepts from the context.
 DIFFICULTY: {difficulty}
 
 DIFFICULTY RULES:
+- Use this exact question-type mix for the final {num_questions} questions:
+{type_distribution}
+- Match these counts exactly in the final output.
+
 If difficulty is EASY:
-- Most questions should be Recall
-- Some questions should be Understand
 - No scenario-based questions
 
 If difficulty is MEDIUM:
-- Most questions should be Understand
-- Some questions should be Apply
 - Apply questions must be simple and single-step
 
 If difficulty is HARD:
-- Most questions should be Analyze
-- Some questions should be Apply
-- Hard questions should involve comparison, reasoning, or distinguishing between concepts
+- Hard questions should lean on comparison, reasoning, or distinguishing between concepts
 
 GLOBAL QUESTION RULES:
 - Each question must test a DIFFERENT concept
@@ -414,7 +412,33 @@ Rules:
 - If the excerpts do not clearly answer the question, say that the textbook does not clearly cover it.
 - Do not guess, speculate, or fill in missing facts.
 - Be concise, clear, and helpful.
-- When possible, reference the supporting page citations naturally in the answer.
+- Prefer a polished tutor voice rather than a dense textbook dump.
+- Sound like a calm, smart tutor who is helping the student understand the idea, not just summarizing the chapter.
+- Keep answers short by default: usually 1 short paragraph or 2-5 bullets.
+- Start with the direct answer, then add only the most useful support.
+- Teach a little:
+  - explain the big idea in plain language
+  - point out why it matters when that helps
+  - use a short example, comparison, or intuition only if the excerpts support it
+- Break up longer answers into short paragraphs or bullet lists.
+- Use light Markdown formatting in the answer string when it helps readability:
+  - You may use short Markdown headings like `## Key ideas` when helpful.
+  - Use `**bold**` for key terms or section labels.
+  - Use `-` bullets for short lists.
+  - Do not use tables.
+- Match the structure to the question:
+  - if the student asks for concepts, definitions, or a list, prefer short bullets
+  - if the student asks "why" or "how", start with the direct answer and then add 2-4 short teaching points
+  - if the student asks for a comparison, make the contrast obvious
+- Do not include page numbers or citation text inside the prose answer.
+- Put source references only in the `citations` array.
+- Avoid long walls of text, repetition, and overly academic phrasing.
+- Keep the prose answer readable on its own and leave explicit source references to the `citations` array.
+- Cite each paragraph or bullet in `answer_blocks` instead of dumping all citations at the end.
+- Each content block should usually have 1-2 of the strongest citations, not every possible citation.
+- Keep the overall `citations` array deduplicated and in first-use order.
+- Use the recent chat history to understand follow-up words like "them" or "that" when it helps.
+- If the earlier chat and the retrieved textbook excerpts conflict, trust the retrieved excerpts.
 - Be kind, and you can respond to greetings or pleasantries, but always steer the conversation back to the textbook content.
 - If the question is not about the textbook content, politely let the user know that you are focused on helping with the textbook material.
 - Emphasize that you want to help them understand the textbook and that you will do your best to explain things clearly based on the excerpts provided.
@@ -423,6 +447,9 @@ Rules:
 
 Textbook title:
 {textbook_title}
+
+Recent chat history:
+{chat_history}
 
 Student question:
 {question}
@@ -434,40 +461,21 @@ Return ONLY valid JSON in this exact format:
 {{
   "answer": "Direct answer grounded in the textbook excerpts.",
   "grounded": true,
-  "citations": ["Page 10", "Page 12"]
+  "citations": ["Page 10", "Page 12"],
+  "answer_blocks": [
+    {{
+      "type": "paragraph",
+      "text": "Direct answer in a tutor voice.",
+      "citations": ["Page 10"]
+    }},
+    {{
+      "type": "bullet",
+      "text": "**Key point:** Short supported explanation.",
+      "citations": ["Page 12"]
+    }}
+  ]
 }}
 """
-
-
-# STOPPED USING this - it was super flaky and generating stupid topics
-# TOPIC_EXTRACTION_PROMPT = """You are an educational expert analyzing a textbook chapter.
-
-# Identify the core topics covered in this chapter.
-# These labels will be used to generate quiz questions and track student performance over time,
-# so they must be specific, consistent, and meaningful.
-
-# RULES:
-# - Identify between 5 and 10 topics depending on the breadth of the chapter
-# - These topics should be the CORE concepts identified from the chapter
-# - If there are headers that indicate topics, utilize them
-# - Each label must be 2-5 words, specific enough to be unambiguous
-#   (e.g. "Binary search trees" not "Trees"; "Memory allocation strategies" not "Memory")
-# - Topics must be spread across the ENTIRE chapter — not clustered at the start
-# - Topics must be distinct — no overlap between labels
-# - ASCII ONLY
-
-# Context:
-# {context}
-
-# Return ONLY valid JSON:
-# {{
-#   "topics": [
-#     {{
-#       "label": "Topic label (2-5 words)"
-#     }}
-#   ]
-# }}
-# """
 
 
 PRETEST_PROMPT = """You are an educational assessment expert generating a holistic pretest for a textbook chapter.

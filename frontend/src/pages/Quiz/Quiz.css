@@ -134,8 +134,36 @@
   min-width: 0;
 }
 
+.quiz-question-meta {
+  flex-shrink: 0;
+}
+
 .quiz-question-type {
   flex-shrink: 0;
+}
+
+.quiz-question-actions {
+  margin-top: 4px;
+}
+
+.quiz-report-link {
+  border: 0;
+  background: transparent;
+  color: var(--mantine-color-gray-6);
+  font-size: 0.82rem;
+  font-weight: 700;
+  line-height: 1;
+  padding: 0;
+  cursor: pointer;
+}
+
+.quiz-report-link:hover {
+  color: var(--mantine-color-red-6);
+}
+
+.quiz-report-link:disabled {
+  color: var(--mantine-color-gray-4);
+  cursor: not-allowed;
 }
 
 .quiz-question-text {

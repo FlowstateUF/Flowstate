@@ -90,28 +90,43 @@ export default function QuizResults() {
                   {response.prompt}
                 </Text>
 
-                <Text mt="sm">
-                  <b>Your answer:</b> {response.selectedText || "No answer selected"}
-                </Text>
-                <Text>
-                  <b>Correct answer:</b> {response.correctText}
-                </Text>
+                {response.isReported ? (
+                  <>
+                    <Text mt="sm" c="orange">
+                      Reported and skipped
+                    </Text>
+                    {response.citation ? (
+                      <Text size="sm" c="dimmed" mt={4}>
+                        {response.citation}
+                      </Text>
+                    ) : null}
+                  </>
+                ) : (
+                  <>
+                    <Text mt="sm">
+                      <b>Your answer:</b> {response.selectedText || "No answer selected"}
+                    </Text>
+                    <Text>
+                      <b>Correct answer:</b> {response.correctText}
+                    </Text>
 
-                {response.explanation ? (
-                  <Text mt="sm" opacity={0.85}>
-                    <b>Why:</b> {response.explanation}
-                  </Text>
-                ) : null}
+                    {response.explanation ? (
+                      <Text mt="sm" opacity={0.85}>
+                        <b>Why:</b> {response.explanation}
+                      </Text>
+                    ) : null}
 
-                {response.citation ? (
-                  <Text size="sm" c="dimmed" mt={4}>
-                    {response.citation}
-                  </Text>
-                ) : null}
+                    {response.citation ? (
+                      <Text size="sm" c="dimmed" mt={4}>
+                        {response.citation}
+                      </Text>
+                    ) : null}
 
-                <Text mt="xs" c={response.isCorrect ? "green" : "red"}>
-                  {response.isCorrect ? "Correct" : "Incorrect"}
-                </Text>
+                    <Text mt="xs" c={response.isCorrect ? "green" : "red"}>
+                      {response.isCorrect ? "Correct" : "Incorrect"}
+                    </Text>
+                  </>
+                )}
               </Paper>
             ))}
           </Stack>

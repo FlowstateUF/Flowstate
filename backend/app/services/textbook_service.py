@@ -130,8 +130,6 @@ FRONT_MATTER_REGEX = re.compile(
     )$""",
     re.VERBOSE,
 )
-
-# ANNACHEN vv 
 def normalize_text(s: str) -> str:
     s = s.replace("\u00a0", " ")
     s = re.sub(r"[ \t]{2,}", " ", s)
@@ -152,7 +150,6 @@ def pdf_page_range_from_doc(src: pymupdf.Document, start_page: int, end_page: in
         return out.tobytes()
     finally:
         out.close()
-# ANNACHEN ^^
 
 def isMainChapterTitle(title: str) -> bool:
     normalized = (title or "").strip()
@@ -228,6 +225,63 @@ def buildChapterRanges(level_toc: list[tuple[int, str, int]], total_pages: int) 
 
     return chapters
 
+# Normalizes a page label so lookups are less picky.
+def normalizePageLabel(label: str | None) -> str:
+    return re.sub(r"\s+", "", (label or "").strip()).lower()
+
+# Looks up the real PDF page for a shown page label.
+def lookupPhysicalPageForLabel(textbook: pymupdf.Document, page_label: str | int | None) -> int | None:
+    if page_label in (None, "") or not hasattr(textbook, "get_page_numbers"):
+        return None
+
+    candidates = []
+    raw_label = str(page_label).strip()
+    normalized_label = normalizePageLabel(raw_label)
+
+    if raw_label:
+        candidates.append(raw_label)
+    if normalized_label and normalized_label != raw_label:
+        candidates.append(normalized_label)
+
+    for candidate in candidates:
+        try:
+            hits = textbook.get_page_numbers(candidate, only_one=True)
+        except TypeError:
+            hits = textbook.get_page_numbers(candidate)
+            if hits:
+                hits = hits[:1]
+        except Exception:
+            hits = []
+
+        if hits:
+            return int(hits[0]) + 1
+
+    return None
+
+# Uses PDF page labels when the TOC is talking in shown book pages.
+def resolveTocStartPages(textbook: pymupdf.Document, level_toc: list[tuple[int, str, int]]) -> list[tuple[int, str, int]]:
+    if not level_toc:
+        return level_toc
+
+    resolved_entries = []
+    translated_count = 0
+    previous_page = 0
+
+    for level, title, start_page in level_toc:
+        resolved_page = lookupPhysicalPageForLabel(textbook, start_page)
+        candidate_page = resolved_page if isinstance(resolved_page, int) else start_page
+
+        if not isinstance(candidate_page, int) or candidate_page < previous_page:
+            return level_toc
+
+        if isinstance(resolved_page, int) and resolved_page != start_page:
+            translated_count += 1
+
+        resolved_entries.append((level, title, candidate_page))
+        previous_page = candidate_page
+
+    return resolved_entries if translated_count >= 1 else level_toc
+
 def getChapterForPage(page: int, toc: list[dict]) -> str:
     if not page or not toc:
         return "Unknown"
@@ -276,30 +330,27 @@ def summarizeChunkDistribution(chunks: list[dict], toc: list[dict]) -> list[dict
         })
     return summary
 
+# Pulls chapter ranges out of the PDF TOC.
 def extract_toc(file: bytes) -> tuple[list[dict], int]:
-    """
-    Table of Contents extraction with PyMuPDF, returns chapters with their page ranges
-    """
     textbook = pymupdf.open(stream=file, filetype="pdf")
     toc = textbook.get_toc()
     total_pages = textbook.page_count
-    textbook.close()
 
-    if not toc:
+    try:
+        if toc:
+            level_toc = selectMainChapterEntries(toc)
+            if len(level_toc) >= 2:
+                level_toc = resolveTocStartPages(textbook, level_toc)
+                chapters = buildChapterRanges(level_toc, total_pages)
+                if len(chapters) >= 2:
+                    return chapters, total_pages
+
         return [{"title": "Full Textbook", "start_page": 1, "end_page": total_pages}], total_pages
-    level_toc = selectMainChapterEntries(toc)
-    chapters = buildChapterRanges(level_toc, total_pages)
-    return chapters, total_pages
+    finally:
+        textbook.close()
 
+# Chunks the book and tags each piece with page metadata.
 def parse_and_chunk(file_bytes: bytes, user_id: str, textbook_id: str, toc: list[dict], *, page_offset: int = 0, start_index: int = 0) -> list[dict]:
-    """ 
-    Docling -> HybridChunker -> list of chunk dicts.
-
-    Use page_offset when you're processing a sliced PDF batch:
-      global_page = local_page + page_offset
-
-    Use start_index so chunk_index stays unique across batches.
-    """
     with tempfile.NamedTemporaryFile(suffix=".pdf", delete=False) as f:
         f.write(file_bytes)
         tmp_path = f.name
@@ -378,111 +429,3 @@ def parse_and_chunk(file_bytes: bytes, user_id: str, textbook_id: str, toc: list
             os.unlink(tmp_path)
         except OSError:
             pass
-
-# def parse_and_chunk(file: bytes, user_id: str, textbook_id: str, toc: list[dict], page_offset: int = 0) -> list[dict]:
-#     """
-#     Runs Docling on the full textbook and return structured chunks
-#     """
-#     with tempfile.NamedTemporaryFile(suffix=".pdf", delete=False) as f:
-#         f.write(file)
-#         tmp_path = f.name
-
-#     try:
-#         no_page = 0
-#         result = converter.convert(tmp_path)
-#         textbook = result.document
-
-#         chunks = []
-#         for chunk in chunker.chunk(textbook):
-#             meta = chunk.meta
-#             doc_items = meta.doc_items
-#             text = normalize_text(chunk.text or "")
-#             if not text:
-#                 continue
-            
-#             pages = sorted({item.prov[0].page_no for item in doc_items if item.prov})
-#             if not pages:
-#                 no_page += 1
-#             # If Docling gives 0-based pages in your run, normalize here:
-#             # pages = [p + 1 for p in pages] OK
-#             if pages and min(pages) == 0:
-#                 pages = [p + 1 for p in pages]
-#             pages = [p + page_offset for p in pages]
-
-#             page_start = pages[0] if pages else None
-#             page_end = pages[-1] if pages else None
-#             chapter_title = _get_chapter_for_page(page_start, toc) if page_start is not None else "Unknown"
-
-#             citation = None
-#             if page_start is not None:
-#                 citation = f"Page {page_start}" if page_start == page_end else f"Pages {page_start}-{page_end}"
-
-#             chunks.append({
-#                 "user_id": user_id,
-#                 "textbook_id": textbook_id,
-#                 "text": text,
-#                 "chapter": chapter_title,
-#                 "section": meta.headings[0] if meta.headings else None,
-#                 "page_start": page_start,
-#                 "page_end": page_end,
-#                 "citation": citation,
-#                 "chunk_index": len(chunks)
-#             }) # ANNACHEN
-#         print("chunks:", len(chunks), "chunks_missing_pages:", no_page)
-#         pages = [c["page_start"] for c in chunks if c["page_start"] is not None]
-#         print("page_start min/max:", min(pages), max(pages))
-#         lens = [len(c["text"]) for c in chunks]
-#         print("avg_chars:", sum(lens)/len(lens), "min_chars:", min(lens), "max_chars:", max(lens))
-#         print("sample chunk 0:", chunks[0]["citation"], chunks[0]["text"][:300])
-#         print("sample chunk -1:", chunks[-1]["citation"], chunks[-1]["text"][:300]) 
-
-#         return chunks
-
-#     finally:
-#         os.unlink(tmp_path)
-    
-# def parse_and_chunk(file_bytes: bytes, user_id: str, textbook_id: str, toc: list[dict], max_chars: int = 1800, overlap_chars: int = 200):
-#     doc = pymupdf.open(stream=file_bytes, filetype="pdf")
-#     chunks = []
-#     chunk_index = 0
-
-#     for page_idx in range(doc.page_count):
-#         page_no = page_idx + 1
-#         raw = doc.load_page(page_idx).get_text("text")
-#         text = normalize_text(raw)
-#         if not text:
-#             continue
-
-#         # simple sliding window chunking by chars (good enough; you can token-chunk later)
-#         start = 0
-#         while start < len(text):
-#             end = min(len(text), start + max_chars)
-#             piece = text[start:end].strip()
-#             if piece:
-#                 chapter_title = _get_chapter_for_page(page_no, toc)
-#                 citation = f"Page {page_no}"
-#                 chunks.append({
-#                     "user_id": user_id,
-#                     "textbook_id": textbook_id,
-#                     "text": piece,
-#                     "chapter": chapter_title,
-#                     "section": None,
-#                     "page_start": page_no,
-#                     "page_end": page_no,
-#                     "citation": citation,
-#                     "chunk_index": chunk_index
-#                 })
-#                 chunk_index += 1
-#             if end == len(text):
-#                 break
-#             start = max(0, end - overlap_chars)
-#     print("chunks:", len(chunks))
-#     pages = [c["page_start"] for c in chunks if c.get("page_start") is not None]
-#     print("page_start min/max:", min(pages) if pages else None, max(pages) if pages else None)
-#     lens = [len(c["text"]) for c in chunks if c.get("text")]
-#     print("avg_chars:", (sum(lens)/len(lens)) if lens else 0, "min_chars:", min(lens) if lens else 0, "max_chars:", max(lens) if lens else 0)
-#     print("sample chunk 0:", chunks[0]["citation"], chunks[0]["text"][:300] if chunks else "")
-#     print("sample chunk -1:", chunks[-1]["citation"], chunks[-1]["text"][:300] if chunks else "")
-
-#     doc.close()
-#     return chunks

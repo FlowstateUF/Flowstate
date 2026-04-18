@@ -10,7 +10,53 @@ from .question_prompts import (
     MC_MIXED_PROMPT,
 )
 
-# Class that allows us to construct each prompt and recieve output fromt the LLM
+
+# Turns buffered paragraph lines into one answer block.
+def flush_paragraph_block(paragraph_lines: list[str], blocks: list[dict]):
+    if not paragraph_lines:
+        return
+
+    text = " ".join(line.strip() for line in paragraph_lines if line.strip()).strip()
+    paragraph_lines.clear()
+    if text:
+        blocks.append({
+            "type": "paragraph",
+            "text": text,
+            "citations": [],
+        })
+
+
+# Sets the target mix of quiz question types for each difficulty.
+def build_quiz_type_distribution(difficulty: str, num_questions: int) -> str:
+    difficulty_key = (difficulty or "easy").strip().lower()
+    total_questions = max(1, int(num_questions or 1))
+
+    ratio_map = {
+        "easy": [("recall", 0.7), ("understand", 0.3)],
+        "medium": [("recall", 0.2), ("understand", 0.5), ("apply", 0.3)],
+        "hard": [("understand", 0.2), ("apply", 0.4), ("analyze", 0.4)],
+    }
+    ratios = ratio_map.get(difficulty_key, ratio_map["easy"])
+
+    counts = {question_type: int(total_questions * ratio) for question_type, ratio in ratios}
+    allocated = sum(counts.values())
+    remainders = sorted(
+        [
+            ((total_questions * ratio) - counts[question_type], question_type)
+            for question_type, ratio in ratios
+        ],
+        reverse=True,
+    )
+
+    for _, question_type in remainders[: max(0, total_questions - allocated)]:
+        counts[question_type] += 1
+
+    return "\n".join(
+        f"- {count} {question_type}" for question_type, count in counts.items() if count > 0
+    )
+
+
+# Handles prompt building and response cleanup for Flo and study tools.
 class LLMService:
     
     def __init__(self, api_key):
@@ -21,7 +67,7 @@ class LLMService:
         self.model = "gpt-oss-20b"
 
     # Used to construct the LLM prompt with the provided context and question type
-    def _build_prompt(self, context, question_type, temp):
+    def build_question_prompt(self, context, question_type, temp):
         
         # Check if question type exists
         if question_type not in QUESTION_TYPES:
@@ -34,7 +80,7 @@ class LLMService:
         )
     
     # Parses the JSON output provided from the LLM
-    def _parse_response(self, response_text):
+    def parse_question_response(self, response_text):
         
         try:
             data = json.loads(response_text)
@@ -53,8 +99,8 @@ class LLMService:
         
         return data
         
-    # Parse JSON for flashcards and summaries    
-    def _parse_json(self, response_text: str):
+    # Parses JSON responses for flashcards, summaries, and chat output.
+    def parse_json_response(self, response_text: str):
         if not response_text or not response_text.strip():
             raise ValueError("LLM returned empty text")
 
@@ -75,7 +121,7 @@ class LLMService:
             raise ValueError(f"LLM error: {data['error']}")
         return data
     
-    def _get_response_text(self, response) -> str:
+    def get_response_text(self, response) -> str:
         text = getattr(response, "output_text", None)
         if isinstance(text, str) and text.strip():
             return text.strip()
@@ -93,7 +139,179 @@ class LLMService:
         joined = "\n".join(chunks).strip()
         return joined
 
-    def questionHasExternalReference(self, question_text: str) -> bool:
+    def remove_citations_from_answer(self, answer: str, citations: list[str]) -> str:
+        cleaned = (answer or "").strip()
+        if not cleaned:
+            return cleaned
+
+        cleaned = re.sub(r"\s*\((?:see\s+)?pages?\s+[ivxlcdm0-9\-–,\s]+(?:\s*(?:and|or)\s+pages?\s+[ivxlcdm0-9\-–,\s]+)?\)\s*", " ", cleaned, flags=re.IGNORECASE)
+        cleaned = re.sub(r"\s+(?:see|on|from)\s+pages?\s+[ivxlcdm0-9\-–,\s]+(?=[.,;:]|\s|$)", " ", cleaned, flags=re.IGNORECASE)
+
+        for citation in citations or []:
+            escaped = re.escape((citation or "").strip())
+            if not escaped:
+                continue
+            cleaned = re.sub(rf"\s*\({escaped}\)\s*", " ", cleaned, flags=re.IGNORECASE)
+            cleaned = re.sub(rf"\s*{escaped}\s*", " ", cleaned, flags=re.IGNORECASE)
+
+        cleaned = re.sub(r"\s+([.,;:])", r"\1", cleaned)
+        cleaned = re.sub(r"\s{2,}", " ", cleaned)
+        return cleaned.strip()
+
+    # Cleans citation strings and keeps the first copy.
+    def normalize_citations(self, citations: list[str]) -> list[str]:
+        normalized = []
+        seen = set()
+
+        for citation in citations or []:
+            if not isinstance(citation, str):
+                continue
+            cleaned = citation.strip()
+            if not cleaned or cleaned in seen:
+                continue
+            normalized.append(cleaned)
+            seen.add(cleaned)
+
+        return normalized
+
+    # Pulls any block-level citations out before we normalize the answer.
+    def collect_block_citations(self, raw_blocks) -> list[str]:
+        citations = []
+
+        if not isinstance(raw_blocks, list):
+            return citations
+
+        for block in raw_blocks:
+            if not isinstance(block, dict):
+                continue
+            citations.extend(block.get("citations") or [])
+
+        return citations
+
+    # Rebuilds the plain answer text from the structured blocks.
+    def compose_answer_from_blocks(self, blocks: list[dict]) -> str:
+        lines = []
+
+        for block in blocks or []:
+            block_type = block.get("type")
+            text = (block.get("text") or "").strip()
+            if not text:
+                continue
+
+            if block_type == "heading":
+                lines.append(f"## {text}")
+            elif block_type == "bullet":
+                lines.append(f"- {text}")
+            else:
+                lines.append(text)
+
+        return "\n".join(lines).strip()
+
+    # Spreads fallback citations across the answer blocks when needed.
+    def spread_citations_across_blocks(self, blocks: list[dict], citations: list[str]) -> list[dict]:
+        if not blocks or not citations:
+            return blocks
+
+        content_indexes = [
+            index for index, block in enumerate(blocks)
+            if block.get("type") != "heading"
+        ]
+        if not content_indexes:
+            return blocks
+
+        if len(content_indexes) == 1:
+            blocks[content_indexes[0]]["citations"] = citations[:]
+            return blocks
+
+        citation_total = len(citations)
+        content_total = len(content_indexes)
+
+        for order, block_index in enumerate(content_indexes):
+            start = round((order * citation_total) / content_total)
+            end = round(((order + 1) * citation_total) / content_total)
+            blocks[block_index]["citations"] = citations[start:end]
+
+        return blocks
+
+    # Turns a plain answer into blocks if the model skips the structured format.
+    def build_fallback_answer_blocks(self, answer: str, citations: list[str]) -> list[dict]:
+        lines = (answer or "").splitlines()
+        blocks = []
+        paragraph_lines = []
+
+        for raw_line in lines:
+            line = raw_line.strip()
+            if not line:
+                flush_paragraph_block(paragraph_lines, blocks)
+                continue
+
+            if re.match(r"^\s{0,3}#{1,3}\s+", line):
+                flush_paragraph_block(paragraph_lines, blocks)
+                blocks.append({
+                    "type": "heading",
+                    "text": re.sub(r"^\s{0,3}#{1,3}\s+", "", line).strip(),
+                    "citations": [],
+                })
+                continue
+
+            if re.match(r"^\s*[-*]\s+", line):
+                flush_paragraph_block(paragraph_lines, blocks)
+                blocks.append({
+                    "type": "bullet",
+                    "text": re.sub(r"^\s*[-*]\s+", "", line).strip(),
+                    "citations": [],
+                })
+                continue
+
+            paragraph_lines.append(line)
+
+        flush_paragraph_block(paragraph_lines, blocks)
+
+        if not blocks and (answer or "").strip():
+            blocks = [{
+                "type": "paragraph",
+                "text": (answer or "").strip(),
+                "citations": [],
+            }]
+
+        return self.spread_citations_across_blocks(blocks, citations)
+
+    # Normalizes the model's answer blocks so the UI can trust them.
+    def normalize_answer_blocks(self, raw_blocks, answer: str, citations: list[str]) -> list[dict]:
+        normalized_blocks = []
+        allowed_types = {"paragraph", "bullet", "heading"}
+
+        if isinstance(raw_blocks, list):
+            for raw_block in raw_blocks:
+                if not isinstance(raw_block, dict):
+                    continue
+
+                text = self.remove_citations_from_answer(
+                    (raw_block.get("text") or "").strip(),
+                    citations,
+                )
+                if not text:
+                    continue
+
+                block_type = raw_block.get("type")
+                if block_type not in allowed_types:
+                    block_type = "paragraph"
+
+                block_citations = [
+                    citation
+                    for citation in self.normalize_citations(raw_block.get("citations") or [])
+                    if citation in citations
+                ][:2]
+
+                normalized_blocks.append({
+                    "type": block_type,
+                    "text": text,
+                    "citations": block_citations,
+                })
+
+        return normalized_blocks or self.build_fallback_answer_blocks(answer, citations)
+
+    def question_has_external_reference(self, question_text: str) -> bool:
         text = (question_text or "").strip().lower()
         if not text:
             return True
@@ -123,7 +341,7 @@ class LLMService:
         ]
         return any(re.search(pattern, text) for pattern in disallowed_patterns)
 
-    def validatePretestQuestion(self, question: dict, index: int):
+    def validate_pretest_question(self, question: dict, index: int):
         required = ["type", "question", "choices", "correct_answer", "explanation", "citation"]
         answer_labels = {"A", "B", "C", "D"}
         valid_types = {"recall", "understand", "apply", "analyze"}
@@ -145,23 +363,23 @@ class LLMService:
         if len(prompt_text) < 12:
             raise ValueError(f"Question {index} is too short to be self-contained")
 
-        if self.questionHasExternalReference(prompt_text):
+        if self.question_has_external_reference(prompt_text):
             raise ValueError(
                 f"Question {index} is not self-contained and appears to reference hidden external material: {prompt_text}"
             )
 
-    def validatePretestQuestions(self, questions: list[dict], expected_count: int):
+    def validate_pretest_questions(self, questions: list[dict], expected_count: int):
         if len(questions) != expected_count:
             raise ValueError(f"Expected {expected_count} questions, got {len(questions)}")
 
         for i, question in enumerate(questions):
-            self.validatePretestQuestion(question, i)
+            self.validate_pretest_question(question, i)
 
     # Generates a question using the given context and question type
     def generate_question(self, context, question_type, temp):
 
         # Build the prompt
-        prompt = self._build_prompt(context, question_type, temp)
+        prompt = self.build_question_prompt(context, question_type, temp)
         
         # Call the LLM
         response = self.client.responses.create(
@@ -171,7 +389,7 @@ class LLMService:
         )
         
         # Parse and return the result
-        return self._parse_response(response.output_text)
+        return self.parse_question_response(response.output_text)
 
     def generate_flashcards(self, context, num_cards=10, temp=0.3):
         prompt = FLASHCARD_PROMPT.format(
@@ -185,7 +403,7 @@ class LLMService:
             temperature=temp
         )
 
-        data = self._parse_json(response.output_text)
+        data = self.parse_json_response(response.output_text)
 
         if "flashcards" not in data or not isinstance(data["flashcards"], list):
             raise ValueError("Response missing 'flashcards' list")
@@ -201,34 +419,13 @@ class LLMService:
             temperature=temp
         )
 
-        raw_text = self._get_response_text(response)
-        data = self._parse_json(raw_text)
-        # data = self._parse_json(response.output_text)
+        raw_text = self.get_response_text(response)
+        data = self.parse_json_response(raw_text)
 
         if "summary" not in data or not isinstance(data["summary"], dict):
             raise ValueError("Response missing 'summary' object")
 
         return data
-    
-    #STOPPED USING
-    # # Extracts the core topics from a given chapter: helps with question labeling
-    # def extract_chapter_topics(self, context, temp=0.2):
-    #     prompt = TOPIC_EXTRACTION_PROMPT.format(context=context)
-
-    #     response = self.client.responses.create(
-    #         model=self.model,
-    #         input=prompt,
-    #         temperature=temp
-    #     )
-
-    #     data = self._parse_json(response.output_text)
-
-    #     if "topics" not in data or not isinstance(data["topics"], list):
-    #         raise ValueError("Response missing 'topics' list")
-    #     if not (5 <= len(data["topics"]) <= 10):
-    #         print(f"[topics] warning: got {len(data['topics'])} topics (expected 5-10)")
-
-    #     return data["topics"]
     
     def generate_pretest(self, chapter_title, context, temp=0.3):
         
@@ -258,21 +455,21 @@ class LLMService:
                 temperature=temp
             )
 
-            data = self._parse_json(response.output_text)
+            data = self.parse_json_response(response.output_text)
 
             if "questions" not in data or not isinstance(data["questions"], list):
                 raise ValueError("Response missing 'questions' list")
 
             try:
-                self.validatePretestQuestions(data["questions"], PRETEST_Q_COUNT)
-                return self.shuffleQuestionsChoices(data["questions"])
+                self.validate_pretest_questions(data["questions"], PRETEST_Q_COUNT)
+                return self.shuffle_questions_choices(data["questions"])
             except ValueError as exc:
                 last_error = exc
                 print(f"[pretest] validation failed on attempt {attempt + 1}: {exc}")
 
         raise last_error or ValueError("Pretest generation failed validation")
 
-    def shuffleQuestionChoices(self, question: dict) -> dict:
+    def shuffle_question_choices(self, question: dict) -> dict:
         choices = question.get("choices") or {}
         correct_answer = (question.get("correct_answer") or "").strip().upper()
         answer_labels = ["A", "B", "C", "D"]
@@ -299,20 +496,22 @@ class LLMService:
             "correct_answer": new_correct_answer,
         }
 
-    def shuffleQuestionsChoices(self, questions: list[dict]) -> list[dict]:
-        return [self.shuffleQuestionChoices(question) for question in questions]
+    def shuffle_questions_choices(self, questions: list[dict]) -> list[dict]:
+        return [self.shuffle_question_choices(question) for question in questions]
     
     def generate_quiz(self, context, difficulty="easy", num_questions=10, temp=0.3):
+        type_distribution = build_quiz_type_distribution(difficulty, num_questions)
         prompt = MC_MIXED_PROMPT.format(
             context=context,
             num_questions=num_questions,
-            difficulty=difficulty.upper()
+            difficulty=difficulty.upper(),
+            type_distribution=type_distribution,
         )
 
         raw = self.generate_raw(prompt, temperature=temp)
 
         try:
-            result = self._parse_json(raw)
+            result = self.parse_json_response(raw)
         except Exception:
             return {"questions": []}
 
@@ -385,15 +584,16 @@ class LLMService:
                 "citation": citation
             })
 
-        cleaned_questions = self.shuffleQuestionsChoices(cleaned_questions)
+        cleaned_questions = self.shuffle_questions_choices(cleaned_questions)
 
         return {
             "questions": cleaned_questions[:num_questions]
         }
 
-    def answer_textbook_question(self, textbook_title, question, context, temp=0.2):
+    def answer_textbook_question(self, textbook_title, question, context, chat_history="", temp=0.2):
         prompt = TEXTBOOK_CHAT_PROMPT.format(
             textbook_title=textbook_title or "Unknown textbook",
+            chat_history=chat_history or "None",
             question=question,
             context=context,
         )
@@ -404,22 +604,37 @@ class LLMService:
             temperature=temp
         )
 
-        raw_text = self._get_response_text(response)
-        data = self._parse_json(raw_text)
+        raw_text = self.get_response_text(response)
+        data = self.parse_json_response(raw_text)
 
         if "answer" not in data or not isinstance(data["answer"], str):
             raise ValueError("Response missing 'answer'")
         if "grounded" not in data or not isinstance(data["grounded"], bool):
             raise ValueError("Response missing 'grounded'")
 
-        citations = data.get("citations") or []
-        if not isinstance(citations, list):
+        raw_citations = data.get("citations") or []
+        if not isinstance(raw_citations, list):
             raise ValueError("Response field 'citations' must be a list")
 
+        citations = self.normalize_citations(
+            list(raw_citations) + self.collect_block_citations(data.get("answer_blocks"))
+        )
+        answer = self.remove_citations_from_answer(
+            data["answer"].strip(),
+            citations,
+        )
+        answer_blocks = self.normalize_answer_blocks(
+            data.get("answer_blocks"),
+            answer,
+            citations,
+        )
+        final_citations = self.normalize_citations(self.collect_block_citations(answer_blocks)) or citations
+
         return {
-            "answer": data["answer"].strip(),
+            "answer": self.compose_answer_from_blocks(answer_blocks) or answer,
             "grounded": data["grounded"],
-            "citations": [str(citation).strip() for citation in citations if str(citation).strip()],
+            "citations": final_citations,
+            "answer_blocks": answer_blocks,
         }
 
     def generate_raw(self, prompt, temperature=0.3):
@@ -429,4 +644,4 @@ class LLMService:
             temperature=temperature
         )
 
-        return self._get_response_text(response)
+        return self.get_response_text(response)

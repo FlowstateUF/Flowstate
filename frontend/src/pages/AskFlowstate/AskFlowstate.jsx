@@ -15,6 +15,7 @@ import { useLocation, useNavigate } from "react-router-dom";
 
 import NavBar from "../../components/NavBar";
 import brain from "../../assets/generic_brain.png";
+import raindrop from "../../assets/raindrop.png";
 import { authFetch } from "../../utils/authFetch";
 import "./AskFlowstate.css";
 
@@ -22,37 +23,12 @@ const API_BASE = "http://127.0.0.1:5001";
 const CUSTOM_COVERS_STORAGE_KEY = "customTextbookCovers";
 const CHAT_STORAGE_PREFIX = "askFloChat:";
 
-function FloMark({ className = "" }) {
-  return (
-    <svg
-      viewBox="0 0 64 64"
-      aria-hidden="true"
-      className={className}
-      fill="none"
-      xmlns="http://www.w3.org/2000/svg"
-    >
-      <path
-        d="M15 25C19 21 23 21 27 25C31 29 35 29 39 25C43 21 47 21 51 25"
-        stroke="currentColor"
-        strokeWidth="4"
-        strokeLinecap="round"
-      />
-      <path
-        d="M15 34C19 30 23 30 27 34C31 38 35 38 39 34C43 30 47 30 51 34"
-        stroke="currentColor"
-        strokeWidth="4"
-        strokeLinecap="round"
-        opacity="0.92"
-      />
-    </svg>
-  );
-}
-
 function createIntroMessage(textbookTitle) {
   return {
     id: "intro",
     role: "assistant",
     citations: [],
+    blocks: [],
     text: textbookTitle
       ? `I’m Flo. Ask me about ${textbookTitle}, and I’ll stay focused on the content from that textbook.`
       : "I’m Flo. Ask me about your textbook, and I’ll stay focused on the content from that book.",
@@ -63,17 +39,316 @@ function getChatStorageKey(textbookId) {
   return `${CHAT_STORAGE_PREFIX}${textbookId}`;
 }
 
+function normalizeCitations(rawCitations) {
+  if (!Array.isArray(rawCitations)) return [];
+
+  return [...new Set(
+    rawCitations.filter((citation) => typeof citation === "string" && citation.trim())
+      .map((citation) => citation.trim())
+  )];
+}
+
+function normalizeAnswerBlocks(rawBlocks, citations) {
+  if (!Array.isArray(rawBlocks)) return [];
+
+  const allowedTypes = new Set(["paragraph", "bullet", "heading"]);
+  const citationSet = new Set(citations);
+
+  return rawBlocks
+    .filter((block) => block && typeof block === "object")
+    .map((block) => {
+      const type = allowedTypes.has(block.type) ? block.type : "paragraph";
+      const text = typeof block.text === "string" ? block.text.trim() : "";
+      const blockCitations = normalizeCitations(block.citations).filter((citation) => citationSet.has(citation));
+
+      return {
+        type,
+        text,
+        citations: blockCitations,
+      };
+    })
+    .filter((block) => block.text);
+}
+
 function sanitizeStoredMessages(rawMessages, textbookTitle) {
   if (!Array.isArray(rawMessages) || rawMessages.length === 0) {
     return [createIntroMessage(textbookTitle)];
   }
 
-  return rawMessages.map((message, index) => ({
-    id: message.id || `${message.role || "assistant"}-${index}`,
-    role: message.role === "user" ? "user" : "assistant",
-    text: typeof message.text === "string" ? message.text : "",
-    citations: Array.isArray(message.citations) ? message.citations : [],
-  }));
+  return rawMessages.map((message, index) => {
+    const citations = normalizeCitations([
+      ...(Array.isArray(message.citations) ? message.citations : []),
+      ...(Array.isArray(message.blocks)
+        ? message.blocks.flatMap((block) => (Array.isArray(block?.citations) ? block.citations : []))
+        : []),
+    ]);
+
+    return {
+      id: message.id || `${message.role || "assistant"}-${index}`,
+      role: message.role === "user" ? "user" : "assistant",
+      text: typeof message.text === "string" ? message.text : "",
+      citations,
+      blocks: normalizeAnswerBlocks(message.blocks, citations),
+    };
+  });
+}
+
+function buildAssistantMessage(id, text, rawCitations = [], rawBlocks = []) {
+  const citations = normalizeCitations([
+    ...(Array.isArray(rawCitations) ? rawCitations : []),
+    ...(Array.isArray(rawBlocks)
+      ? rawBlocks.flatMap((block) => (Array.isArray(block?.citations) ? block.citations : []))
+      : []),
+  ]);
+
+  return {
+    id,
+    role: "assistant",
+    text,
+    citations,
+    blocks: normalizeAnswerBlocks(rawBlocks, citations),
+  };
+}
+
+function isHeading(line) {
+  return /^\s{0,3}#{1,3}\s+/.test(line);
+}
+
+// Keeps a short window of chat so follow-ups make more sense.
+function getMessageHistory(messages, limit = 6) {
+  return messages
+    .filter((message) => message.id !== "intro")
+    .slice(-limit)
+    .map((message) => ({
+      role: message.role,
+      text: message.text,
+    }));
+}
+
+function buildCitationIndexMap(citations) {
+  const indexMap = new Map();
+  citations.forEach((citation, index) => {
+    indexMap.set(citation, index + 1);
+  });
+  return indexMap;
+}
+
+// Shows tiny source markers that match the citation chips below.
+function renderCitationMarkers(citations, citationIndexMap) {
+  const indexes = [...new Set(
+    (citations || [])
+      .map((citation) => citationIndexMap.get(citation))
+      .filter(Boolean)
+  )];
+  if (!indexes.length) return null;
+
+  return (
+    <sup className="ask-inline-citations" aria-label="Sources used in this answer">
+      {indexes.map((index) => (
+        <span key={`inline-citation-${index}`} className="ask-inline-citation">
+          [{index}]
+        </span>
+      ))}
+    </sup>
+  );
+}
+
+function renderInlineMarkdown(text, keyPrefix) {
+  const matches = [...(text || "").matchAll(/(\*\*([^*]+)\*\*|\*([^*\n]+)\*|`([^`]+)`)/g)];
+  if (!matches.length) return text;
+
+  const parts = [];
+  let cursor = 0;
+
+  matches.forEach((match, index) => {
+    const [fullMatch, , boldText, singleStarText, codeText] = match;
+    const matchIndex = match.index ?? 0;
+
+    if (matchIndex > cursor) {
+      parts.push(text.slice(cursor, matchIndex));
+    }
+
+    if (boldText || singleStarText) {
+      parts.push(
+        <strong key={`${keyPrefix}-strong-${index}`}>
+          {boldText || singleStarText}
+        </strong>
+      );
+    } else if (codeText) {
+      parts.push(
+        <code key={`${keyPrefix}-code-${index}`}>
+          {codeText}
+        </code>
+      );
+    } else {
+      parts.push(fullMatch);
+    }
+
+    cursor = matchIndex + fullMatch.length;
+  });
+
+  if (cursor < text.length) {
+    parts.push(text.slice(cursor));
+  }
+
+  return parts;
+}
+
+function renderAssistantBlocks(blocks, citationIndexMap) {
+  const renderedBlocks = [];
+  let bulletRun = [];
+
+  const flushBulletRun = () => {
+    if (!bulletRun.length) return;
+
+    renderedBlocks.push(
+      <ul key={`bullet-run-${renderedBlocks.length}`}>
+        {bulletRun.map((block, index) => (
+          <li key={`bullet-${renderedBlocks.length}-${index}`}>
+            {renderInlineMarkdown(block.text, `bullet-${renderedBlocks.length}-${index}`)}
+            {renderCitationMarkers(block.citations, citationIndexMap)}
+          </li>
+        ))}
+      </ul>
+    );
+
+    bulletRun = [];
+  };
+
+  blocks.forEach((block, index) => {
+    if (block.type === "bullet") {
+      bulletRun.push(block);
+      return;
+    }
+
+    flushBulletRun();
+
+    if (block.type === "heading") {
+      renderedBlocks.push(
+        <h4 key={`heading-${index}`} className="ask-message-heading">
+          {renderInlineMarkdown(block.text, `heading-${index}`)}
+          {renderCitationMarkers(block.citations, citationIndexMap)}
+        </h4>
+      );
+      return;
+    }
+
+    renderedBlocks.push(
+      <p key={`paragraph-${index}`}>
+        {renderInlineMarkdown(block.text, `paragraph-${index}`)}
+        {renderCitationMarkers(block.citations, citationIndexMap)}
+      </p>
+    );
+  });
+
+  flushBulletRun();
+  return renderedBlocks;
+}
+
+function renderAssistantText(text, citations, citationIndexMap) {
+  const lines = (text || "").split(/\r?\n/);
+  const blocks = [];
+  let index = 0;
+
+  const isBullet = (line) => /^\s*[-*]\s+/.test(line);
+  const isNumbered = (line) => /^\s*\d+\.\s+/.test(line);
+  const isListLine = (line) => isBullet(line) || isNumbered(line);
+
+  while (index < lines.length) {
+    const line = lines[index].trim();
+
+    if (!line) {
+      index += 1;
+      continue;
+    }
+
+    if (isHeading(line)) {
+      const headingText = line.replace(/^\s{0,3}#{1,3}\s+/, "");
+      blocks.push(
+        <h4 key={`heading-${blocks.length}`} className="ask-message-heading">
+          {renderInlineMarkdown(headingText, `heading-${blocks.length}`)}
+        </h4>
+      );
+      index += 1;
+      continue;
+    }
+
+    if (isListLine(line)) {
+      const ordered = isNumbered(line);
+      const items = [];
+
+      while (index < lines.length) {
+        const listLine = lines[index].trim();
+        if (!listLine || !isListLine(listLine) || isNumbered(listLine) !== ordered) {
+          break;
+        }
+
+        const content = listLine.replace(/^\s*(?:[-*]|\d+\.)\s+/, "");
+        items.push(content);
+        index += 1;
+      }
+
+      const ListTag = ordered ? "ol" : "ul";
+      blocks.push(
+        <ListTag key={`list-${blocks.length}`}>
+          {items.map((item, itemIndex) => (
+            <li key={`item-${itemIndex}`}>
+              {renderInlineMarkdown(item, `list-${blocks.length}-${itemIndex}`)}
+            </li>
+          ))}
+        </ListTag>
+      );
+      continue;
+    }
+
+    const paragraphLines = [];
+    while (index < lines.length) {
+      const paragraphLine = lines[index].trim();
+      if (!paragraphLine || isListLine(paragraphLine) || isHeading(paragraphLine)) {
+        break;
+      }
+      paragraphLines.push(paragraphLine);
+      index += 1;
+    }
+
+    const paragraphText = paragraphLines.join(" ");
+    blocks.push(
+      <p key={`paragraph-${blocks.length}`}>
+        {renderInlineMarkdown(paragraphText, `paragraph-${blocks.length}`)}
+      </p>
+    );
+  }
+
+  if (!blocks.length) {
+    return [
+      <p key="paragraph-empty">
+        {renderInlineMarkdown(text || "", "paragraph-empty")}
+        {renderCitationMarkers(citations, citationIndexMap)}
+      </p>,
+    ];
+  }
+
+  const lastBlock = blocks[blocks.length - 1];
+  blocks[blocks.length - 1] = (
+    <div key="assistant-message-last-block" className="ask-message-lastBlock">
+      {lastBlock}
+      {renderCitationMarkers(citations, citationIndexMap)}
+    </div>
+  );
+
+  return blocks;
+}
+
+function renderAssistantMessage(message) {
+  const citations = normalizeCitations(message.citations);
+  const blocks = normalizeAnswerBlocks(message.blocks, citations);
+  const citationIndexMap = buildCitationIndexMap(citations);
+
+  if (blocks.length) {
+    return renderAssistantBlocks(blocks, citationIndexMap);
+  }
+
+  return renderAssistantText(message.text, citations, citationIndexMap);
 }
 
 export default function AskFlowstate() {
@@ -184,6 +459,7 @@ export default function AskFlowstate() {
       role: "user",
       text: nextQuestion,
       citations: [],
+      blocks: [],
     };
 
     setMessages((previous) => [...previous, userMessage]);
@@ -192,6 +468,7 @@ export default function AskFlowstate() {
     setChatError("");
 
     try {
+      const messageHistory = getMessageHistory(messages);
       const response = await authFetch(`${API_BASE}/api/textbooks/${textbook_id}/ask-flo/query`, {
         method: "POST",
         headers: {
@@ -199,6 +476,7 @@ export default function AskFlowstate() {
         },
         body: JSON.stringify({
           message: nextQuestion,
+          history: messageHistory,
         }),
       });
 
@@ -214,12 +492,7 @@ export default function AskFlowstate() {
         setChatError(errorMessage);
         setMessages((previous) => [
           ...previous,
-          {
-            id: `assistant-error-${Date.now()}`,
-            role: "assistant",
-            text: errorMessage,
-            citations: [],
-          },
+          buildAssistantMessage(`assistant-error-${Date.now()}`, errorMessage),
         ]);
         return;
       }
@@ -230,24 +503,19 @@ export default function AskFlowstate() {
 
       setMessages((previous) => [
         ...previous,
-        {
-          id: `assistant-${Date.now()}`,
-          role: "assistant",
-          text: payload.message || "I’m not sure this textbook clearly covers that.",
-          citations: Array.isArray(payload.citations) ? payload.citations : [],
-        },
+        buildAssistantMessage(
+          `assistant-${Date.now()}`,
+          payload.message || "I’m not sure this textbook clearly covers that.",
+          payload.citations,
+          payload.answer_blocks
+        ),
       ]);
     } catch (error) {
       console.error("Ask Flo query failed:", error);
       setChatError("Flo could not answer that right now.");
       setMessages((previous) => [
         ...previous,
-        {
-          id: `assistant-error-${Date.now()}`,
-          role: "assistant",
-          text: "Flo could not answer that right now.",
-          citations: [],
-        },
+        buildAssistantMessage(`assistant-error-${Date.now()}`, "Flo could not answer that right now."),
       ]);
     } finally {
       setIsResponding(false);
@@ -289,7 +557,7 @@ export default function AskFlowstate() {
                   <div className="ask-header-main">
                     <Group gap="sm" align="center">
                       <div className="ask-flo-iconWrap">
-                        <FloMark className="ask-flo-icon" />
+                        <img src={raindrop} alt="" className="ask-flo-icon" />
                       </div>
                       <div>
                         <Title order={1} className="ask-title">
@@ -357,11 +625,18 @@ export default function AskFlowstate() {
                       <div className="ask-message-label">
                         {message.role === "assistant" ? "Flo" : "You"}
                       </div>
-                      <p>{message.text}</p>
+                      {message.role === "assistant" ? (
+                        <div className="ask-message-content">
+                          {renderAssistantMessage(message)}
+                        </div>
+                      ) : (
+                        <p>{message.text}</p>
+                      )}
                       {message.role === "assistant" && message.citations?.length ? (
                         <div className="ask-citations">
-                          {message.citations.map((citation) => (
+                          {message.citations.map((citation, index) => (
                             <span key={`${message.id}-${citation}`} className="ask-citation-chip">
+                              <span className="ask-citation-index">{index + 1}</span>
                               {citation}
                             </span>
                           ))}

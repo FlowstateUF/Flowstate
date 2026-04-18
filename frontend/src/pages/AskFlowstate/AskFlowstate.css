@@ -16,8 +16,8 @@
 }
 
 .ask-flo-iconWrap {
-  width: 48px;
-  height: 48px;
+  width: 54px;
+  height: 54px;
   display: grid;
   place-items: center;
 }
@@ -25,7 +25,7 @@
 .ask-flo-icon {
   width: 42px;
   height: 42px;
-  color: #2768b0;
+  object-fit: contain;
 }
 
 .ask-title {
@@ -152,6 +152,64 @@
   line-height: 1.55;
 }
 
+.ask-message-content {
+  display: grid;
+  gap: 10px;
+  line-height: 1.6;
+}
+
+.ask-message-lastBlock {
+  display: inline;
+}
+
+.ask-message-content p {
+  margin: 0;
+}
+
+.ask-message-heading {
+  margin: 0;
+  font-size: 1rem;
+  line-height: 1.35;
+}
+
+.ask-message-content ul,
+.ask-message-content ol {
+  margin: 0;
+  padding-left: 1.2rem;
+}
+
+.ask-message-content li + li {
+  margin-top: 4px;
+}
+
+.ask-message-content strong {
+  font-weight: 700;
+}
+
+.ask-message-content code {
+  padding: 0.08rem 0.35rem;
+  border-radius: 6px;
+  background: rgba(37, 99, 235, 0.08);
+  font-size: 0.92em;
+}
+
+.ask-inline-citations {
+  margin-left: 6px;
+  vertical-align: super;
+  font-size: 0.68rem;
+  line-height: 1;
+  white-space: nowrap;
+}
+
+.ask-inline-citation {
+  color: #4c72c9;
+  font-weight: 700;
+}
+
+.ask-inline-citation + .ask-inline-citation {
+  margin-left: 3px;
+}
+
 .ask-citations {
   display: flex;
   flex-wrap: wrap;
@@ -162,6 +220,7 @@
 .ask-citation-chip {
   display: inline-flex;
   align-items: center;
+  gap: 6px;
   min-height: 24px;
   padding: 0 10px;
   border-radius: 999px;
@@ -170,6 +229,17 @@
   color: #3157a8;
   font-size: 0.78rem;
   font-weight: 600;
+}
+
+.ask-citation-index {
+  display: inline-grid;
+  place-items: center;
+  width: 16px;
+  height: 16px;
+  border-radius: 999px;
+  background: rgba(37, 99, 235, 0.12);
+  font-size: 0.68rem;
+  font-weight: 800;
 }
 
 .ask-message-assistant {
