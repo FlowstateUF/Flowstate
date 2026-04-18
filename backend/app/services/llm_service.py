@@ -7,6 +7,7 @@ from .question_prompts import (
     SUMMARY_PROMPT,
     PRETEST_PROMPT,
     TEXTBOOK_CHAT_PROMPT,
+    MC_MIXED_PROMPT,
 )
 
 
@@ -468,23 +469,93 @@ class LLMService:
     def shuffle_questions_choices(self, questions: list[dict]) -> list[dict]:
         return [self.shuffle_question_choices(question) for question in questions]
     
-    def generate_quiz(self, context, question_type="recall", num_questions=5, temp=0.3):
-        questions = []
-        # adjust for duplicate questions later
+    def generate_quiz(self, context, difficulty="easy", num_questions=10, temp=0.3):
+        prompt = MC_MIXED_PROMPT.format(
+            context=context,
+            num_questions=num_questions,
+            difficulty=difficulty.upper()
+        )
 
-        for _ in range(num_questions):
-            q = self.generate_question(
-                context=context,
-                question_type=question_type,
-                temp=temp
-            )
-            questions.append({
-                **q,
+        raw = self.generate_raw(prompt, temperature=temp)
+
+        try:
+            result = self._parse_json(raw)
+        except Exception:
+            return {"questions": []}
+
+        questions = result.get("questions", [])
+        if not isinstance(questions, list):
+            return {"questions": []}
+
+        cleaned_questions = []
+        seen_questions = set()
+        valid_types = {"recall", "understand", "apply", "analyze"}
+
+        for q in questions:
+            if not isinstance(q, dict):
+                continue
+
+            question_text = (q.get("question") or "").strip()
+            choices = q.get("choices")
+            correct_answer = (q.get("correct_answer") or "").strip().upper()
+            explanation = (q.get("explanation") or "").strip()
+            citation = (q.get("citation") or "").strip()
+            question_type = (q.get("type") or "").strip().lower()
+
+            if not question_text or not isinstance(choices, dict):
+                continue
+
+            if set(choices.keys()) != {"A", "B", "C", "D"}:
+                continue
+
+            if correct_answer not in {"A", "B", "C", "D"}:
+                continue
+
+            normalized_question = re.sub(r"\s+", " ", question_text.lower())
+            if normalized_question in seen_questions:
+                continue
+            seen_questions.add(normalized_question)
+
+            normalized_choices = {}
+            choice_values = []
+
+            invalid_choice = False
+            for label in ["A", "B", "C", "D"]:
+                value = choices.get(label)
+                if not isinstance(value, str) or not value.strip():
+                    invalid_choice = True
+                    break
+                cleaned_value = value.strip()
+                normalized_choices[label] = cleaned_value
+                choice_values.append(cleaned_value.lower())
+
+            if invalid_choice:
+                continue
+
+            if len(set(choice_values)) < 4:
+                continue
+
+            if question_type not in valid_types:
+                if difficulty == "easy":
+                    question_type = "recall"
+                elif difficulty == "medium":
+                    question_type = "understand"
+                else:
+                    question_type = "analyze"
+
+            cleaned_questions.append({
                 "type": question_type,
+                "question": question_text,
+                "choices": normalized_choices,
+                "correct_answer": correct_answer,
+                "explanation": explanation,
+                "citation": citation
             })
 
+        cleaned_questions = self.shuffleQuestionsChoices(cleaned_questions)
+
         return {
-            "questions": questions
+            "questions": cleaned_questions[:num_questions]
         }
 
     def answer_textbook_question(self, textbook_title, question, context, chat_history="", temp=0.2):
@@ -533,3 +604,12 @@ class LLMService:
             "citations": final_citations,
             "answer_blocks": answer_blocks,
         }
+
+    def generate_raw(self, prompt, temperature=0.3):
+        response = self.client.responses.create(
+            model=self.model,
+            input=prompt,
+            temperature=temperature
+        )
+
+        return self._get_response_text(response)
