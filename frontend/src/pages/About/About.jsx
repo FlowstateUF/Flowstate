@@ -1,5 +1,6 @@
 import NavBar from "../../components/NavBar";
 import "./About.css";
+import aboutImage from "../../assets/about.jpeg";
 
 const PLACEHOLDER_IMG =
   "data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='1200' height='800'%3E%3Cdefs%3E%3ClinearGradient id='g' x1='0' y1='0' x2='1' y2='1'%3E%3Cstop stop-color='%23e5e7eb'/%3E%3Cstop offset='1' stop-color='%23cbd5e1'/%3E%3C/linearGradient%3E%3C/defs%3E%3Crect width='1200' height='800' fill='url(%23g)'/%3E%3Cpath d='M120 610 L420 340 L650 520 L820 380 L1080 610' fill='none' stroke='%2394a3b8' stroke-width='18' stroke-linecap='round' stroke-linejoin='round'/%3E%3Ccircle cx='470' cy='300' r='70' fill='%2394a3b8' opacity='0.45'/%3E%3Ctext x='50%25' y='52%25' dominant-baseline='middle' text-anchor='middle' font-family='Arial' font-size='44' fill='%2364748b'%3EFiller Image%3C/text%3E%3C/svg%3E";
@@ -16,9 +17,9 @@ export default function About() {
 
           <div className="about-hero-imageWrap">
             <img
-              className="about-hero-image"
-              src={PLACEHOLDER_IMG}
-              alt="Students collaborating"
+                className="about-hero-image"
+                src={aboutImage}
+                alt="Students collaborating"
             />
           </div>
         </div>
