@@ -1,4 +1,5 @@
 # Flowstate
+Flowstate is an AI-assisted educational platform that turns static PDF textbooks into interactive study experiences. Using textbook processing and a RAG pipeline, the platform supports chapter-based pretests, quizzes, summaries, flashcards, and a textbook-aware AI tutor named Flo. Flowstate also includes learning analytics that help users track study activity, performance, and confidence over time.
 
 ## Setup
 - Make sure all secrets exist in `backend/.env`
